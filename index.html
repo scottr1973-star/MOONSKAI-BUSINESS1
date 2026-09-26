@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Moonskai Business Organizer — inventory, events, auctions, expenses, mileage, and business records.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Moonskai Business Organizer</title>
+  <script defer src="./db.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand-block">
+        <div class="brand-kicker">MOONSKAI LABS L.L.C.</div>
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">M</div>
+          <div>
+            <h1>Business Organizer</h1>
+            <p id="headerSub">Your business at a glance</p>
+          </div>
+        </div>
+      </div>
+      <button id="installBtn" class="header-action" type="button" hidden aria-label="Install app">
+        <span class="ico">↓</span>
+        <span>Install</span>
+      </button>
+    </header>
+
+    <main id="view" class="view" tabindex="-1">
+      <section class="loading-card">
+        <div class="spinner"></div>
+        <strong>Opening Business Organizer…</strong>
+      </section>
+    </main>
+
+    <button class="fab" id="fab" type="button" aria-label="Add new item">
+      <span>＋</span>
+    </button>
+
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button class="nav-item active" data-route="dashboard" type="button">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3z"/></svg>
+        </span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-item" data-route="inventory" type="button">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg>
+        </span>
+        <span class="nav-label">Inventory</span>
+      </button>
+      <button class="nav-item" data-route="calendar" type="button">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M6 2h2v3h8V2h2v3h3v17H3V5h3zm13 8H5v10h14z"/></svg>
+        </span>
+        <span class="nav-label">Calendar</span>
+      </button>
+      <button class="nav-item" data-route="money" type="button">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2c3.3 0 6 1.8 6 4s-2.7 4-6 4-6-1.8-6-4 2.7-4 6-4zm-6 8.3C7.4 11.4 9.6 12 12 12s4.6-.6 6-1.7V14c0 2.2-2.7 4-6 4s-6-1.8-6-4zm0 6C7.4 17.4 9.6 18 12 18s4.6-.6 6-1.7V20c0 2.2-2.7 4-6 4s-6-1.8-6-4z"/></svg>
+        </span>
+        <span class="nav-label">Money</span>
+      </button>
+      <button class="nav-item" data-route="more" type="button">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+        </span>
+        <span class="nav-label">More</span>
+      </button>
+    </nav>
+  </div>
+
+  <input id="globalCameraInput" type="file" accept="image/*" capture="environment" hidden>
+  <input id="globalGalleryInput" type="file" accept="image/*" multiple hidden>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+</body>
+</html>
