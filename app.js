@@ -419,11 +419,12 @@ if(clearAttention)clearAttention.onclick=()=>{state.inventoryAttention="";render
 
 async function openItemModal(item,seed){
   const editing=!!item, now=new Date().toISOString();
-  const [events,auctions,itemCategories,storageLocations]=await Promise.all([
+  const [events,auctions,itemCategories,storageLocations,itemSales]=await Promise.all([
     DB.getAll("events"),
     DB.getAll("auctions"),
     getItemCategories(),
-    getStorageLocations()
+    getStorageLocations(),
+      editing?DB.getByIndex("sales","itemId",item.id):Promise.resolve([])
   ]);
 
 const generatedSku=(item&&item.sku)||(seed&&seed.sku)||await nextSku();
@@ -439,6 +440,13 @@ buyerNotes:"",description:"",conditionNotes:"",workNeeded:"",repairNotes:"",
     estimatedRepairCost:"",notes:"",createdAt:now,updatedAt:now
   };
   const draft=Object.assign({},base,item||{},seed||{});
+  const activeSale=itemSales.find(s=>s.status!=="Voided" && (!draft.saleTransactionId || s.transactionId===draft.saleTransactionId))
+    || itemSales.find(s=>s.status!=="Voided")
+    || null;
+  if(editing && draft.status==="Sold" && activeSale){
+    draft.soldPrice=activeSale.soldPrice;
+    draft.saleDate=activeSale.date||draft.saleDate;
+  }
   const catalogStatuses=STATUSES.filter(status=>status!=="Sold");
 
   openModal(`
@@ -813,7 +821,7 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
   view.innerHTML=`
     <div class="section-head"><div><h2>Money</h2><p>Sales, expenses and business mileage.</p></div><button class="btn small" id="addExpenseTop">＋ Expense</button></div>
     <section class="stats">${stat("Sales",money(revenue),"gross revenue")}${stat("Expenses",money(expTotal),"recorded business expenses")}${stat("Mileage",miles.toFixed(1)+" mi","business travel")}${stat("Estimated Net",money(profit),"before taxes",profit>=0?"kpi-positive":"kpi-negative")}</section>
-<div class="money-tabs">${["expenses","mileage","sales","register"].map(t=>`<button class="tab-btn ${state.moneyTab===t?"active":""}" data-money-tab="${t}">${t==="register"?"Register":cap(t)}</button>`).join("")}</div>
+<div class="money-tabs">${["expenses","mileage","sales","register"].map(t=>`<button class="tab-btn ${state.moneyTab===t?"active":""}" data-money-tab="${t}">${t==="register"?"Register":cap(t)}</button>`).join("")}${state.moneyTab==="register"?`<button class="btn small" id="recordSaleTop">＋ Record Sale</button>`:""}</div>
     <div id="moneyContent"></div>
   `;
   $("#addExpenseTop").onclick=()=>openExpenseModal();
@@ -821,8 +829,7 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
 
   if(state.moneyTab==="expenses"){
     expenses.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    $("#moneyContent").innerHTML=`<div class="section-head"><div><h3>Expenses</h3></div><button class="btn secondary small" id="addMileageShortcut">＋ Mileage</button></div>${table(["Date","Category","Vendor","Description","Amount",""],expenses.map(e=>[prettyDate(e.date),esc(e.category),esc(e.vendor||""),esc(e.description||""),money(e.amount),`<button class="btn secondary small" data-expense-id="${e.id}">Edit</button>`]))}`;
-    $("#addMileageShortcut").onclick=()=>openMileageModal();
+    $("#moneyContent").innerHTML=`<div class="section-head"><div><h3>Expenses</h3></div></div>${table(["Date","Category","Vendor","Description","Amount",""],expenses.map(e=>[prettyDate(e.date),esc(e.category),esc(e.vendor||""),esc(e.description||""),money(e.amount),`<button class="btn secondary small" data-expense-id="${e.id}">Edit</button>`]))}`;
     $$("[data-expense-id]").forEach(b=>b.onclick=()=>openExpenseModal(expenses.find(e=>e.id===b.dataset.expenseId)));
 }else if(state.moneyTab==="mileage"){
   mileage.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
@@ -866,7 +873,6 @@ const todayPaymentRows=Array.from(todayPaymentGroups.entries())
         <h3>Sales Register</h3>
         <p>Cash, Square, Cash App and other sales together.</p>
       </div>
-      <button class="btn small" id="recordSaleTop">＋ Record Sale</button>
     </div>
 
 <section class="stats">
@@ -907,7 +913,7 @@ ${table(
 }
 }
 
-async function openExpenseModal(exp){
+async function openExpenseModal(exp,receiptSeed){
   const [items,events,auctions]=await Promise.all([DB.getAll("items"),DB.getAll("events"),DB.getAll("auctions")]);
   const e=exp||{id:DB.uid("expense"),date:today(),category:"Fuel",amount:"",vendor:"",description:"",itemId:"",eventId:"",auctionId:"",paymentMethod:"",notes:""};
   openModal(`
@@ -915,10 +921,134 @@ async function openExpenseModal(exp){
     <form id="expenseForm"><div class="modal-body"><div class="form-grid">
       ${field("Date","date",e.date,true,"date")}${selectField("Category","category",EXPENSE_CATEGORIES,e.category)}${field("Amount","amount",e.amount,true,"number","0.01")}${field("Vendor","vendor",e.vendor)}${field("Description","description",e.description)}${field("Payment method","paymentMethod",e.paymentMethod)}
       ${relationField("Related item","itemId",items.map(x=>[x.id,x.name]),e.itemId)}${relationField("Related event","eventId",events.map(x=>[x.id,x.title]),e.eventId)}${relationField("Related auction","auctionId",auctions.map(x=>[x.id,x.name]),e.auctionId)}${textareaField("Notes","notes",e.notes)}
-    </div></div><div class="modal-actions">${exp?`<button class="btn danger" id="deleteExpense" type="button">Delete</button>`:""}<button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Expense</button></div></form>
+      </div>
+      <div class="record-section">
+        <div class="record-section-title"><span>🧾</span><div><strong>Receipts / Attachments</strong><small>Keep receipt photos with this expense record.</small></div></div>
+        <div class="photo-actions">
+          <button class="photo-action camera-action" id="takeReceiptPhotoBtn" type="button"><span class="photo-action-icon">📷</span><span><strong>Take Receipt Photo</strong><small>Use the phone camera</small></span></button>
+          <button class="photo-action" id="chooseReceiptPhotoBtn" type="button"><span class="photo-action-icon">🖼</span><span><strong>Add From Gallery</strong><small>Select one or more receipt pictures</small></span></button>
+        </div>
+        <input id="receiptCameraInput" type="file" accept="image/*" capture="environment" hidden>
+        <input id="receiptGalleryInput" type="file" accept="image/*" multiple hidden>
+        <div class="photo-strip" id="receiptPreview"><div class="muted">No receipts attached yet.</div></div>
+      </div>
+    </div><div class="modal-actions">${exp?`<button class="btn danger" id="deleteExpense" type="button">Delete</button>`:""}<button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Expense</button></div></form>
   `);
-  $("#expenseForm").onsubmit=async x=>{x.preventDefault();await DB.put("expenses",Object.assign({},e,Object.fromEntries(new FormData(x.currentTarget).entries())));closeModal();toast("Expense saved.");renderMoney();};
-  if(exp)$("#deleteExpense").onclick=async()=>{if(confirm("Delete this expense?")){await DB.remove("expenses",e.id);closeModal();renderMoney();}};
+    const stagedReceipts=Array.isArray(receiptSeed) ? receiptSeed : exp
+      ? (await DB.getByIndex("attachments","ownerId",e.id)).filter(a=>a.ownerType==="expense")
+      : [];
+
+    const renderReceiptPreview=()=>{
+      const strip=$("#receiptPreview");
+      if(!strip)return;
+
+      strip.innerHTML=stagedReceipts.length
+        ? stagedReceipts.map((receipt,index)=>`<div class="photo-thumb" data-receipt-index="${index}"><img alt="Receipt preview"><button type="button" data-remove-receipt="${index}" aria-label="Remove receipt">×</button></div>`).join("")
+        : `<div class="muted">No receipts attached yet.</div>`;
+
+      stagedReceipts.forEach((receipt,index)=>{
+        const holder=strip.querySelector(`[data-receipt-index="${index}"]`);
+        const img=holder&&holder.querySelector("img");
+        if(img&&receipt.blob){
+          const url=URL.createObjectURL(receipt.blob);
+          img.src=url;
+          img.onload=()=>URL.revokeObjectURL(url);
+        }
+      });
+
+      $$("[data-remove-receipt]").forEach(button=>{
+        button.onclick=()=>{
+          stagedReceipts.splice(Number(button.dataset.removeReceipt),1);
+          renderReceiptPreview();
+        };
+      });
+    };
+
+    const stageReceiptFiles=async files=>{
+      for(const file of Array.from(files||[])){
+        if(!String(file.type||"").startsWith("image/"))continue;
+        stagedReceipts.push({
+          id:DB.uid("attachment"),
+          ownerType:"expense",
+          ownerId:e.id,
+          name:file.name||"Receipt photo",
+          type:"receipt",
+          mimeType:"image/jpeg",
+          blob:await compressImage(file),
+          createdAt:new Date().toISOString()
+        });
+      }
+      renderReceiptPreview();
+    };
+
+    $("#takeReceiptPhotoBtn").onclick=async()=>{
+      const expenseDraft=Object.assign({},e,Object.fromEntries(new FormData($("#expenseForm")).entries()));
+      const preservedReceipts=stagedReceipts.slice();
+      closeModal();
+      await startCameraCapture(async blobs=>{
+        const capturedReceipts=blobs.map(blob=>({
+          id:DB.uid("attachment"),
+          ownerType:"expense",
+          ownerId:e.id,
+          name:"Receipt photo",
+          type:"receipt",
+          mimeType:blob.type||"image/jpeg",
+          blob,
+          createdAt:new Date().toISOString()
+        }));
+        await openExpenseModal(expenseDraft,preservedReceipts.concat(capturedReceipts));
+      },async()=>{
+        await openExpenseModal(expenseDraft,preservedReceipts);
+      });
+    };
+    $("#chooseReceiptPhotoBtn").onclick=()=>$("#receiptGalleryInput").click();
+
+    $("#receiptCameraInput").onchange=async event=>{
+      await stageReceiptFiles(event.target.files);
+      event.target.value="";
+    };
+
+    $("#receiptGalleryInput").onchange=async event=>{
+      await stageReceiptFiles(event.target.files);
+      event.target.value="";
+    };
+
+    renderReceiptPreview();
+
+  $("#expenseForm").onsubmit=async x=>{
+      x.preventDefault();
+      await DB.put("expenses",Object.assign({},e,Object.fromEntries(new FormData(x.currentTarget).entries())));
+
+      const existingReceiptAttachments=(await DB.getByIndex("attachments","ownerId",e.id))
+        .filter(a=>a.ownerType==="expense");
+      const keepReceiptIds=new Set(stagedReceipts.map(a=>a.id));
+
+      for(const attachment of existingReceiptAttachments){
+        if(!keepReceiptIds.has(attachment.id)){
+          await DB.remove("attachments",attachment.id);
+        }
+      }
+
+      for(const attachment of stagedReceipts){
+        await DB.put("attachments",attachment);
+      }
+
+      closeModal();
+      toast("Expense saved.");
+      renderMoney();
+    };
+  if(exp)$("#deleteExpense").onclick=async()=>{
+      if(confirm("Delete this expense and its attached receipts?")){
+        const receiptAttachments=(await DB.getByIndex("attachments","ownerId",e.id))
+          .filter(a=>a.ownerType==="expense");
+        for(const attachment of receiptAttachments){
+          await DB.remove("attachments",attachment.id);
+        }
+        await DB.remove("expenses",e.id);
+        closeModal();
+        renderMoney();
+      }
+    };
 }
 
 async function openMileageModal(row){
@@ -2270,16 +2400,37 @@ function openQuickActionSheet(){
 $("#qaSale").onclick=()=>{closeModal();openSaleRegisterModal();};
 }
 
-async function startCameraCapture(onCaptured){
+async function startCameraCapture(onCaptured,onCancelled){
+    const fallbackCapture=()=>{
+      if(!onCaptured){
+        $("#globalCameraInput").click();
+        return;
+      }
+      const input=document.createElement("input");
+      input.type="file";
+      input.accept="image/*";
+      input.setAttribute("capture","environment");
+      input.onchange=async event=>{
+        const files=Array.from(event.target.files||[]);
+        if(!files.length){
+          if(onCancelled)await onCancelled();
+          return;
+        }
+        const blobs=[];
+        for(const file of files)blobs.push(await compressImage(file));
+        await onCaptured(blobs);
+      };
+      input.click();
+    };
   if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext){
     let stream=null;
     try{
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
       openModal(`
-        <div class="modal-head"><div><div class="eyebrow">CAMERA</div><h2>Capture Inventory</h2></div><button class="close-btn" id="cameraClose" type="button">×</button></div>
+        <div class="modal-head"><div><div class="eyebrow">CAMERA</div><h2>Take Photo</h2></div><button class="close-btn" id="cameraClose" type="button">×</button></div>
         <div class="camera-stage">
           <video id="liveCamera" autoplay playsinline muted></video>
-          <div class="camera-help">Fill the frame with the item. You can add more photos after cataloging starts.</div>
+          <div class="camera-help">Fill the frame and take a clear photo.</div>
         </div>
         <div class="camera-controls">
           <button class="btn secondary" id="cameraCancel" type="button">Cancel</button>
@@ -2290,10 +2441,10 @@ async function startCameraCapture(onCaptured){
       const video=$("#liveCamera");
       video.srcObject=stream;
       const stop=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());};
-      const cancel=()=>{stop();closeModal();};
+      const cancel=async()=>{stop();closeModal();if(onCancelled)await onCancelled();};
       $("#cameraClose").onclick=cancel;
       $("#cameraCancel").onclick=cancel;
-      $("#cameraFallback").onclick=()=>{stop();closeModal();$("#globalCameraInput").click();};
+      $("#cameraFallback").onclick=()=>{stop();closeModal();fallbackCapture();};
       $("#cameraShutter").onclick=async()=>{
         if(!video.videoWidth){toast("Camera is still starting.");return;}
         const canvas=document.createElement("canvas");
@@ -2314,7 +2465,7 @@ async function startCameraCapture(onCaptured){
       if(stream)stream.getTracks().forEach(t=>t.stop());
     }
   }
-  $("#globalCameraInput").click();
+    fallbackCapture();
 }
 
 async function quickCaptureFromFile(file){
