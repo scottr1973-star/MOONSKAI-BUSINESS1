@@ -2506,6 +2506,8 @@ async function openInventoryCodeScanner(){
     </div>
 
     <div class="modal-actions">
+      <button class="btn secondary" id="scannerTorch" type="button" disabled>💡 Light On</button>
+      <button class="btn secondary" id="scannerRefocus" type="button" disabled>◎ Refocus</button>
       <button class="btn secondary" id="scannerCancel" type="button">Cancel</button>
     </div>
   `);
@@ -2517,8 +2519,17 @@ async function openInventoryCodeScanner(){
   let finished=false;
   let lastCode="";
   let cameraDetail="";
+  let cameraTrack=null;
+  let torchOn=false;
+  let cameraCapabilities={};
 
   const stopScanner=()=>{
+    if(cameraTrack && torchOn){
+      try{cameraTrack.applyConstraints({advanced:[{torch:false}]});}catch(err){}
+    }
+    torchOn=false;
+    cameraTrack=null;
+    cameraCapabilities={};
     if(controls){
       try{controls.stop();}catch(err){}
       controls=null;
@@ -2531,6 +2542,63 @@ async function openInventoryCodeScanner(){
       video.srcObject=null;
     }
   };
+
+  const updateTorchButton=()=>{
+    const button=$("#scannerTorch");
+    if(!button)return;
+    button.textContent=torchOn?"💡 Light Off":"💡 Light On";
+  };
+
+  const toggleTorch=async()=>{
+    if(!cameraTrack || !cameraCapabilities.torch)return;
+
+    try{
+      torchOn=!torchOn;
+      await cameraTrack.applyConstraints({advanced:[{torch:torchOn}]});
+      updateTorchButton();
+      status.textContent=torchOn
+        ?"Camera light is on. Hold the code steady and avoid glare."
+        :"Camera light is off. Hold the code steady inside the camera view.";
+    }catch(err){
+      torchOn=false;
+      updateTorchButton();
+      console.warn("Scanner torch control unavailable",err);
+      status.textContent="This camera could not change the light setting.";
+    }
+  };
+
+  const refocusScanner=async()=>{
+    if(!cameraTrack)return;
+
+    try{
+      const modes=Array.isArray(cameraCapabilities.focusMode)
+        ? cameraCapabilities.focusMode
+        : [];
+
+      if(modes.includes("single-shot")){
+        await cameraTrack.applyConstraints({advanced:[{focusMode:"single-shot"}]});
+        status.textContent="Refocusing camera…";
+
+        setTimeout(async()=>{
+          try{
+            if(cameraTrack && modes.includes("continuous")){
+              await cameraTrack.applyConstraints({advanced:[{focusMode:"continuous"}]});
+            }
+            if(!finished)status.textContent="Camera refocused. Hold the code steady.";
+          }catch(err){}
+        },700);
+      }else if(modes.includes("continuous")){
+        await cameraTrack.applyConstraints({advanced:[{focusMode:"continuous"}]});
+        status.textContent="Autofocus refreshed. Hold the code steady.";
+      }else{
+        status.textContent="This camera does not expose manual focus control.";
+      }
+    }catch(err){
+      console.warn("Scanner refocus unavailable",err);
+      status.textContent="The camera could not be refocused manually.";
+    }
+  };
+
 
   const cancel=()=>{
     finished=true;
@@ -2558,6 +2626,8 @@ async function openInventoryCodeScanner(){
 
   $("#scannerClose").onclick=cancel;
   $("#scannerCancel").onclick=cancel;
+  $("#scannerTorch").onclick=toggleTorch;
+  $("#scannerRefocus").onclick=refocusScanner;
 
   $("#scannerManualFind").onclick=()=>openMatchedItem(manual.value);
 
@@ -2595,8 +2665,25 @@ async function openInventoryCodeScanner(){
     const track=stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
 
     if(track){
+      cameraTrack=track;
       try{
         const capabilities=typeof track.getCapabilities==="function" ? track.getCapabilities() : {};
+        cameraCapabilities=capabilities;
+
+        const torchButton=$("#scannerTorch");
+        const refocusButton=$("#scannerRefocus");
+
+        if(torchButton){
+          torchButton.disabled=!capabilities.torch;
+          torchButton.title=capabilities.torch
+            ?"Turn the rear camera light on or off"
+            :"Camera light control is not available on this device";
+        }
+
+        if(refocusButton){
+          const modes=Array.isArray(capabilities.focusMode)?capabilities.focusMode:[];
+          refocusButton.disabled=!(modes.includes("continuous") || modes.includes("single-shot"));
+        }
 
         if(Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")){
           await track.applyConstraints({advanced:[{focusMode:"continuous"}]});
