@@ -2476,8 +2476,12 @@ async function openInventoryCodeScanner(){
           </div>
         </div>
 
-        <div class="camera-stage">
+        <div class="camera-stage" style="position:relative">
           <video id="inventoryScannerVideo" playsinline muted style="display:block;width:100%;max-height:62vh;object-fit:contain;background:#000;border-radius:18px"></video>
+          <div id="scannerCameraControls" style="position:absolute;left:10px;right:10px;bottom:10px;z-index:20;display:flex;justify-content:center;gap:8px;flex-wrap:wrap">
+            <button class="btn secondary small" id="scannerTorchOverlay" type="button" disabled style="background:rgba(18,24,32,.92)">💡 Light On</button>
+            <button class="btn secondary small" id="scannerRefocusOverlay" type="button" disabled style="background:rgba(18,24,32,.92)">◎ Refocus</button>
+          </div>
         </div>
 
         <p id="inventoryScannerStatus" style="color:var(--muted);line-height:1.5;margin:12px 0 0">Starting camera…</p>
@@ -2506,8 +2510,6 @@ async function openInventoryCodeScanner(){
     </div>
 
     <div class="modal-actions">
-      <button class="btn secondary" id="scannerTorch" type="button" disabled>💡 Light On</button>
-      <button class="btn secondary" id="scannerRefocus" type="button" disabled>◎ Refocus</button>
       <button class="btn secondary" id="scannerCancel" type="button">Cancel</button>
     </div>
   `);
@@ -2522,8 +2524,15 @@ async function openInventoryCodeScanner(){
   let cameraTrack=null;
   let torchOn=false;
   let cameraCapabilities={};
+  let nativeBarcodeDetector=null;
+  let nativeBarcodeTimer=null;
 
   const stopScanner=()=>{
+    if(nativeBarcodeTimer){
+      clearTimeout(nativeBarcodeTimer);
+      nativeBarcodeTimer=null;
+    }
+    nativeBarcodeDetector=null;
     if(cameraTrack && torchOn){
       try{cameraTrack.applyConstraints({advanced:[{torch:false}]});}catch(err){}
     }
@@ -2544,7 +2553,7 @@ async function openInventoryCodeScanner(){
   };
 
   const updateTorchButton=()=>{
-    const button=$("#scannerTorch");
+    const button=$("#scannerTorchOverlay");
     if(!button)return;
     button.textContent=torchOn?"💡 Light Off":"💡 Light On";
   };
@@ -2626,8 +2635,8 @@ async function openInventoryCodeScanner(){
 
   $("#scannerClose").onclick=cancel;
   $("#scannerCancel").onclick=cancel;
-  $("#scannerTorch").onclick=toggleTorch;
-  $("#scannerRefocus").onclick=refocusScanner;
+  $("#scannerTorchOverlay").onclick=toggleTorch;
+  $("#scannerRefocusOverlay").onclick=refocusScanner;
 
   $("#scannerManualFind").onclick=()=>openMatchedItem(manual.value);
 
@@ -2670,8 +2679,8 @@ async function openInventoryCodeScanner(){
         const capabilities=typeof track.getCapabilities==="function" ? track.getCapabilities() : {};
         cameraCapabilities=capabilities;
 
-        const torchButton=$("#scannerTorch");
-        const refocusButton=$("#scannerRefocus");
+        const torchButton=$("#scannerTorchOverlay");
+        const refocusButton=$("#scannerRefocusOverlay");
 
         if(torchButton){
           torchButton.disabled=!capabilities.torch;
@@ -2699,6 +2708,62 @@ async function openInventoryCodeScanner(){
         }
       }catch(err){
         console.warn("Scanner camera focus enhancement unavailable",err);
+      }
+    }
+
+    if("BarcodeDetector" in window){
+      try{
+        let nativeFormats=["qr_code","code_128"];
+
+        if(typeof window.BarcodeDetector.getSupportedFormats==="function"){
+          const supported=await window.BarcodeDetector.getSupportedFormats();
+          nativeFormats=nativeFormats.filter(format=>supported.includes(format));
+        }
+
+        if(nativeFormats.length){
+          nativeBarcodeDetector=new window.BarcodeDetector({formats:nativeFormats});
+
+          const runNativeBarcodeScan=async()=>{
+            if(finished || !nativeBarcodeDetector)return;
+
+            try{
+              if(video.readyState>=2){
+                const results=await nativeBarcodeDetector.detect(video);
+
+                if(results && results.length){
+                  const code=String(results[0].rawValue||"").trim();
+
+                  if(code && code!==lastCode){
+                    lastCode=code;
+                    status.textContent=`Detected ${code}. Looking up inventory…`;
+
+                    const matched=await openMatchedItem(code);
+
+                    if(!matched){
+                      setTimeout(()=>{
+                        if(!finished)lastCode="";
+                      },1200);
+                    }
+                  }
+                }
+              }
+            }catch(err){
+              if(!finished){
+                console.debug("Native barcode frame not decoded",err);
+              }
+            }
+
+            if(!finished && nativeBarcodeDetector){
+              nativeBarcodeTimer=setTimeout(runNativeBarcodeScan,180);
+            }
+          };
+
+          nativeBarcodeTimer=setTimeout(runNativeBarcodeScan,180);
+          cameraDetail+=` Native detector: ${nativeFormats.join(" + ")}.`;
+        }
+      }catch(err){
+        console.warn("Native BarcodeDetector could not start",err);
+        nativeBarcodeDetector=null;
       }
     }
 
