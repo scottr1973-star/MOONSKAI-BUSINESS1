@@ -505,7 +505,7 @@ ${selectField("Physical location","storageLocation",[""].concat(storageLocations
             ${field("Shipping","shippingCost",draft.shippingCost,false,"number","0.01")}
             ${field("Handling","handlingCost",draft.handlingCost,false,"number","0.01")}
             ${field("Other acquisition cost","otherAcquisitionCosts",draft.otherAcquisitionCosts,false,"number","0.01")}
-            <div class="field full landed-cost-box"><label>Total landed cost</label><output id="landedCostOutput">${money(itemCost(draft))}</output></div>
+            <div class="field full landed-cost-box"><label>Total item cost</label><output id="landedCostOutput">${money(itemCost(draft))}</output></div>
           </div>
         </div>
 
@@ -581,7 +581,7 @@ ${textareaField("Buyer / sale notes","buyerNotes",draft.buyerNotes)}
     const data=Object.fromEntries(new FormData(form).entries());
     $("#landedCostOutput").textContent=money(itemCost(data));
   };
-  ["purchasePrice","buyerPremium","salesTax","shippingCost","handlingCost","otherAcquisitionCosts"].forEach(n=>{
+  ["purchasePrice","buyerPremium","salesTax","shippingCost","handlingCost","otherAcquisitionCosts","estimatedRepairCost"].forEach(n=>{
     if(form.elements[n])form.elements[n].addEventListener("input",recalc);
   });
 
@@ -676,7 +676,7 @@ async function openItemDetail(id){
       <div class="photo-strip">${photos.length?photos.map(p=>`<div class="photo-thumb" style="width:150px;height:118px"><img data-blob-id="${p.id}" alt=""></div>`).join(""):empty("No photos yet.")}</div>
 <section class="stats" style="grid-template-columns:repeat(3,1fr);margin:14px 0">
   ${stat("Purchase",money(item.purchasePrice),"")}
-  ${stat("Landed Cost",money(itemCost(item)),"")}
+  ${stat("Item Cost",money(itemCost(item)),"")}
   ${stat("Asking",money(item.askingPrice),"")}
   ${stat("Sold",item.soldPrice?money(item.soldPrice):"—","")}
   ${stat("Net Proceeds",item.soldPrice?money(num(item.soldPrice)+num(item.shippingCharged)-num(item.sellingFees)-num(item.paymentFees)-num(item.outboundShippingCost)):"—","")}
@@ -689,12 +689,12 @@ async function openItemDetail(id){
       <div class="section-head"><div><h3>Item log</h3></div><button class="btn small" id="addLogBtn">＋ Log Entry</button></div>
       <div>${logs.length?logs.map(l=>`<div class="log-entry"><small>${dateTime(l.createdAt)}</small><div>${nl2br(l.text)}</div></div>`).join(""):empty("No log entries yet.")}</div>
     </div>
-<div class="modal-actions"><button class="btn danger" id="deleteItemBtn" type="button">Delete</button><button class="btn secondary" id="printPriceTagBtn" type="button">Print Price Tag</button><button class="btn secondary" id="editItemBtn" type="button">Edit Item</button>${item.status!=="Sold"?`<button class="btn" id="sellItemBtn" type="button">Sell Item</button>`:""}<button class="btn" data-close type="button">Done</button></div>
+<div class="modal-actions"><button class="btn danger" id="deleteItemBtn" type="button">Delete</button><button class="btn secondary" id="printPriceTagBtn" type="button">Print Label</button><button class="btn secondary" id="editItemBtn" type="button">Edit Item</button>${item.status!=="Sold"?`<button class="btn" id="sellItemBtn" type="button">Sell Item</button>`:""}<button class="btn" data-close type="button">Done</button></div>
   `);
 
   hydrateBlobImages(photos);
   $("#editItemBtn").onclick=()=>{closeModal();openItemModal(item);};
-$("#printPriceTagBtn").onclick=()=>printPriceTag(item);
+$("#printPriceTagBtn").onclick=()=>{closeModal();openLabelSheetPrinter([item]);};
 if(item.status!=="Sold"){
   $("#sellItemBtn").onclick=()=>openSaleRegisterModal(item.id);
 }
@@ -821,7 +821,10 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
 }else if(state.moneyTab==="sales"){
   const itemMap=new Map(items.map(i=>[i.id,i]));
   sales.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-$("#moneyContent").innerHTML=`<div class="section-head"><div><h3>Item Sales</h3></div></div>${table(["Date","Item","Sold","Net Proceeds","Cost","Profit"],activeSales.sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(s=>[prettyDate(s.date),esc(itemMap.get(s.itemId)?.name||"Unknown item"),money(s.soldPrice),money(saleNetProceeds(s)),money(s.costBasis),money(saleProfit(s))]))}`;
+$("#moneyContent").innerHTML=`<div class="section-head"><div><h3>Item Sales</h3></div></div>${table(["Date","Item","Sold","Net Proceeds","Cost","Profit"],activeSales.sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(s=>{const soldItem=itemMap.get(s.itemId);return [prettyDate(s.date),`${esc(soldItem?.name||"Unknown item")}${soldItem?.sku?`<br><button class="sku-sale-link" type="button" data-sale-item-id="${esc(s.itemId)}">${esc(soldItem.sku)}</button>`:""}`,money(s.soldPrice),money(saleNetProceeds(s)),money(s.costBasis),money(saleProfit(s))];}))}`;
+  $$("[data-sale-item-id]").forEach(button=>{
+    button.onclick=()=>openItemDetail(button.dataset.saleItemId);
+  });
 }else{
   transactions.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 
@@ -2374,11 +2377,12 @@ function selectField(label,name,options,value=""){return `<div class="field"><la
 function relationField(label,name,options,value=""){return `<div class="field"><label>${esc(label)}</label><select class="select" name="${esc(name)}"><option value="">— None —</option>${options.map(([id,n])=>`<option value="${esc(id)}" ${id===value?"selected":""}>${esc(n)}</option>`).join("")}</select></div>`;}
 function attentionCard(label,value,sub,icon,filter){return `<button class="attention-card" data-jump="inventory" data-attention="${esc(filter)}"><span class="attention-icon">${icon}</span><span class="attention-number">${value}</span><strong>${label}</strong><small>${sub}</small></button>`;}
 function itemCost(i){
+  const repair=num(i.estimatedRepairCost);
   const explicit=num(i.totalLandedCost);
-  if(explicit>0)return explicit;
+  if(explicit>0)return explicit+repair;
   const detailed=num(i.purchasePrice)+num(i.buyerPremium)+num(i.salesTax)+num(i.shippingCost)+num(i.handlingCost)+num(i.otherAcquisitionCosts);
-  if(detailed>num(i.purchasePrice))return detailed;
-  return num(i.purchasePrice)+num(i.acquisitionCosts);
+  if(detailed>num(i.purchasePrice))return detailed+repair;
+  return num(i.purchasePrice)+num(i.acquisitionCosts)+repair;
 }
 function isCapitalizedAcquisitionExpense(e){
   if(!e || !e.itemId)return false;
