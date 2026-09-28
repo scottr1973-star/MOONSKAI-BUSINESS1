@@ -439,6 +439,7 @@ buyerNotes:"",description:"",conditionNotes:"",workNeeded:"",repairNotes:"",
     estimatedRepairCost:"",notes:"",createdAt:now,updatedAt:now
   };
   const draft=Object.assign({},base,item||{},seed||{});
+  const catalogStatuses=STATUSES.filter(status=>status!=="Sold");
 
   openModal(`
     <div class="modal-head">
@@ -471,7 +472,7 @@ ${field("Brand","brand",draft.brand)}
 ${field("Model","model",draft.model)}
 ${field("Serial number","serialNumber",draft.serialNumber)}
 ${field("Year / approximate year","year",draft.year)}
-${selectField("Status","status",STATUSES,draft.status)}
+${draft.status==="Sold"?`<div class="field"><label>Status</label><div class="input" aria-readonly="true">Sold</div><input type="hidden" name="status" value="Sold"></div>`:selectField("Status","status",catalogStatuses,draft.status)}
 ${selectField("Physical location","storageLocation",[""].concat(storageLocations),draft.storageLocation)}
             ${textareaField("Detailed description","description",draft.description)}
             ${textareaField("Condition","conditionNotes",draft.conditionNotes)}
@@ -524,8 +525,8 @@ ${selectField("Physical location","storageLocation",[""].concat(storageLocations
           <div class="form-grid">
             ${field("Asking price","askingPrice",draft.askingPrice,false,"number","0.01")}
             ${field("Minimum acceptable price","minimumPrice",draft.minimumPrice,false,"number","0.01")}
-${field("Sold price","soldPrice",draft.soldPrice,false,"number","0.01")}
-${field("Sale date","saleDate",draft.saleDate,false,"date")}
+<div class="field"><label>Sold price</label><div class="input" aria-readonly="true">${draft.soldPrice?money(draft.soldPrice):"—"}</div><input type="hidden" name="soldPrice" value="${esc(draft.soldPrice??"")}"></div>
+<div class="field"><label>Sale date</label><div class="input" aria-readonly="true">${draft.saleDate?prettyDate(draft.saleDate):"—"}</div><input type="hidden" name="saleDate" value="${esc(draft.saleDate??"")}"></div>
 ${relationField("Sold at event","soldEventId",events.map(x=>[x.id,x.title]),draft.soldEventId)}
 ${field("Sale platform","salePlatform",draft.salePlatform)}
 ${field("Buyer / customer","buyerName",draft.buyerName)}
@@ -593,6 +594,16 @@ ${textareaField("Buyer / sale notes","buyerNotes",draft.buyerNotes)}
     }
     if(forceDraft && !String(data.name||"").trim()) data.name="Unfinished Item";
     if(forceDraft) data.status="Draft / Finish Cataloging";
+
+    if(editing && draft.status==="Sold"){
+      data.status="Sold";
+      data.soldPrice=draft.soldPrice;
+      data.saleDate=draft.saleDate;
+    }else{
+      if(!catalogStatuses.includes(data.status))data.status="Available";
+      data.soldPrice=draft.soldPrice||"";
+      data.saleDate=draft.saleDate||"";
+    }
 
 data.sku=String(data.sku||"").trim().toUpperCase();
 if(!data.sku)data.sku=await nextSku();
@@ -1410,7 +1421,7 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Inventory Status</h3>
-        <p>Available means the item is ready to sell. Other statuses include Reserved, Needs Work, Listed, Sold, Personal / Not For Sale and Draft / Finish Cataloging.</p>
+        <p>Available means the item is ready to sell. Catalog statuses include Reserved, Needs Work, Listed, Personal / Not For Sale and Draft / Finish Cataloging. Sold is controlled automatically by the Sales Register and cannot be selected manually.</p>
         <p>The default Active inventory view hides Sold items. Use All statuses when you need to find historical inventory.</p>
       </div>
 
