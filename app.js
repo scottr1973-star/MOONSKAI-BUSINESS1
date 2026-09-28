@@ -1553,7 +1553,7 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>CSV Exports</h3>
-        <p>Inventory, Expenses and Mileage can be exported as CSV files for spreadsheets, bookkeeping or external record keeping.</p>
+        <p>Inventory, Sales, Expenses and Mileage can be exported as CSV files for spreadsheets, bookkeeping or external record keeping.</p>
       </div>
 
       <div class="panel">
@@ -1639,7 +1639,7 @@ async function renderMore(){
       </div>
       <div class="panel">
         <h3>CSV exports</h3>
-        <div class="hero-actions"><button class="btn secondary" data-csv="items">Inventory CSV</button><button class="btn secondary" data-csv="expenses">Expenses CSV</button><button class="btn secondary" data-csv="mileage">Mileage CSV</button></div>
+        <div class="hero-actions"><button class="btn secondary" data-csv="items">Inventory CSV</button><button class="btn secondary" data-csv="sales">Sales CSV</button><button class="btn secondary" data-csv="expenses">Expenses CSV</button><button class="btn secondary" data-csv="mileage">Mileage CSV</button></div>
       </div>
       <div class="panel">
         <h3>Storage</h3>
@@ -2337,7 +2337,92 @@ async function importBackupFile(e){
   }catch(err){alert("Import failed: "+err.message);}
   e.target.value="";
 }
+async function exportSalesCSV(){
+  const [sales,items,transactions]=await Promise.all([
+    DB.getAll("sales"),
+    DB.getAll("items"),
+    DB.getAll("transactions")
+  ]);
+
+  if(!sales.length){
+    toast("Nothing to export.");
+    return;
+  }
+
+  const itemMap=new Map(items.map(item=>[item.id,item]));
+  const transactionMap=new Map(transactions.map(transaction=>[transaction.id,transaction]));
+
+  const headers=[
+    "Date",
+    "Status",
+    "Sale ID",
+    "Transaction ID",
+    "SKU",
+    "Item Name",
+    "Sold Price",
+    "Shipping Charged",
+    "Selling Fees",
+    "Payment Fees",
+    "Outbound Shipping Cost",
+    "Net Proceeds",
+    "Cost Basis",
+    "Profit",
+    "Payment Method",
+    "Buyer Name",
+    "External Transaction ID",
+    "Event ID",
+    "Transaction Total",
+    "Cash Received",
+    "Change Due",
+    "Notes"
+  ];
+
+  const rows=sales
+    .slice()
+    .sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))
+    .map(sale=>{
+      const item=itemMap.get(sale.itemId)||{};
+      const transaction=transactionMap.get(sale.transactionId)||{};
+
+      return [
+        sale.date||"",
+        sale.status||"",
+        sale.id||"",
+        sale.transactionId||"",
+        item.sku||"",
+        item.name||"",
+        num(sale.soldPrice),
+        num(sale.shippingCharged),
+        num(sale.sellingFees),
+        num(sale.paymentFees),
+        num(sale.outboundShippingCost),
+        saleNetProceeds(sale),
+        num(sale.costBasis),
+        saleProfit(sale),
+        sale.paymentMethod||transaction.paymentMethod||"",
+        sale.buyerName||transaction.buyerName||"",
+        sale.externalTransactionId||transaction.externalTransactionId||"",
+        sale.eventId||transaction.eventId||"",
+        num(transaction.total),
+        transaction.paymentMethod==="Cash" ? num(transaction.cashReceived) : "",
+        transaction.paymentMethod==="Cash" ? num(transaction.changeDue) : "",
+        sale.notes||transaction.notes||""
+      ];
+    });
+
+  const csv=[headers,...rows]
+    .map(row=>row.map(csvCell).join(","))
+    .join("\n");
+
+  downloadFile(`sales-${today()}.csv`,csv,"text/csv");
+  toast("Sales CSV exported.");
+}
+
 async function exportCSV(store){
+  if(store==="sales"){
+    await exportSalesCSV();
+    return;
+  }
   const rows=await DB.getAll(store);
   if(!rows.length){toast("Nothing to export.");return;}
   const clean=rows.map(r=>{const o={};Object.keys(r).forEach(k=>{if(!(r[k] instanceof Blob))o[k]=r[k]??"";});return o;});
