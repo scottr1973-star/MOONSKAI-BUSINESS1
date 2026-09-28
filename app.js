@@ -2451,7 +2451,7 @@ async function findInventoryByScannedCode(value){
   )||null;
 }
 
-async function openInventoryCodeScanner(){
+async function openInventoryCodeScanner(preferredDeviceId=""){
   if(typeof ZXingBrowser==="undefined"){
     alert("The barcode scanner library is not available.");
     return;
@@ -2476,6 +2476,11 @@ async function openInventoryCodeScanner(){
           </div>
         </div>
 
+        <div class="field" id="scannerCameraPicker" style="display:none;margin:0 0 10px">
+          <label>Camera</label>
+          <select class="select" id="scannerCameraSelect"></select>
+          <small style="color:var(--muted)">If one rear lens looks blurry, try another camera here.</small>
+        </div>
         <div class="camera-stage" style="position:relative">
           <video id="inventoryScannerVideo" playsinline muted style="display:block;width:100%;max-height:62vh;object-fit:contain;background:#000;border-radius:18px"></video>
           <div id="scannerCameraControls" style="position:absolute;left:10px;right:10px;bottom:10px;z-index:20;display:flex;justify-content:center;gap:8px;flex-wrap:wrap">
@@ -2517,6 +2522,8 @@ async function openInventoryCodeScanner(){
   const video=$("#inventoryScannerVideo");
   const status=$("#inventoryScannerStatus");
   const manual=$("#scannerManualSku");
+  const cameraPicker=$("#scannerCameraPicker");
+  const cameraSelect=$("#scannerCameraSelect");
   let controls=null;
   let finished=false;
   let lastCode="";
@@ -2650,7 +2657,21 @@ async function openInventoryCodeScanner(){
   try{
     const reader=new ZXingBrowser.BrowserMultiFormatReader();
 
-    controls=await reader.decodeFromConstraints({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}},
+    const videoConstraints=preferredDeviceId
+      ? {
+          deviceId:{exact:preferredDeviceId},
+          width:{ideal:1920},
+          height:{ideal:1080},
+          frameRate:{ideal:30}
+        }
+      : {
+          facingMode:{ideal:"environment"},
+          width:{ideal:1920},
+          height:{ideal:1080},
+          frameRate:{ideal:30}
+        };
+
+    controls=await reader.decodeFromConstraints({video:videoConstraints,audio:false},
       video,
       async(result,error)=>{
         if(finished || !result)return;
@@ -2699,8 +2720,49 @@ async function openInventoryCodeScanner(){
         }
 
         const settings=typeof track.getSettings==="function" ? track.getSettings() : {};
+
+        try{
+          if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+            const devices=(await navigator.mediaDevices.enumerateDevices())
+              .filter(device=>device.kind==="videoinput");
+
+            if(devices.length>1 && cameraPicker && cameraSelect){
+              const activeDeviceId=String(settings.deviceId||"");
+
+              cameraSelect.innerHTML="";
+
+              devices.forEach((device,index)=>{
+                const option=document.createElement("option");
+                option.value=device.deviceId;
+                option.textContent=device.label||`Camera ${index+1}`;
+                cameraSelect.appendChild(option);
+              });
+
+              if(activeDeviceId && devices.some(device=>device.deviceId===activeDeviceId)){
+                cameraSelect.value=activeDeviceId;
+              }
+
+              cameraPicker.style.display="block";
+
+              cameraSelect.onchange=()=>{
+                const nextDeviceId=String(cameraSelect.value||"");
+
+                if(!nextDeviceId || nextDeviceId===activeDeviceId)return;
+
+                finished=true;
+                stopScanner();
+                closeModal();
+                openInventoryCodeScanner(nextDeviceId);
+              };
+
+              cameraDetail+=` ${devices.length} cameras available.`;
+            }
+          }
+        }catch(err){
+          console.warn("Camera enumeration unavailable",err);
+        }
         if(settings.width && settings.height){
-          cameraDetail=` Camera: ${settings.width} × ${settings.height}.`;
+          cameraDetail+=` Camera: ${settings.width} × ${settings.height}.`;
         }
 
         if(settings.focusMode){
