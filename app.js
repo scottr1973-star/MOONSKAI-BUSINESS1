@@ -2477,7 +2477,7 @@ async function openInventoryCodeScanner(){
         </div>
 
         <div class="camera-stage">
-          <video id="inventoryScannerVideo" playsinline muted style="display:block;width:100%;max-height:62vh;object-fit:cover;background:#000;border-radius:18px"></video>
+          <video id="inventoryScannerVideo" playsinline muted style="display:block;width:100%;max-height:62vh;object-fit:contain;background:#000;border-radius:18px"></video>
         </div>
 
         <p id="inventoryScannerStatus" style="color:var(--muted);line-height:1.5;margin:12px 0 0">Starting camera…</p>
@@ -2516,6 +2516,7 @@ async function openInventoryCodeScanner(){
   let controls=null;
   let finished=false;
   let lastCode="";
+  let cameraDetail="";
 
   const stopScanner=()=>{
     if(controls){
@@ -2570,8 +2571,7 @@ async function openInventoryCodeScanner(){
   try{
     const reader=new ZXingBrowser.BrowserMultiFormatReader();
 
-    controls=await reader.decodeFromVideoDevice(
-      undefined,
+    controls=await reader.decodeFromConstraints({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}},
       video,
       async(result,error)=>{
         if(finished || !result)return;
@@ -2591,8 +2591,32 @@ async function openInventoryCodeScanner(){
       }
     );
 
+    const stream=video.srcObject;
+    const track=stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+
+    if(track){
+      try{
+        const capabilities=typeof track.getCapabilities==="function" ? track.getCapabilities() : {};
+
+        if(Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")){
+          await track.applyConstraints({advanced:[{focusMode:"continuous"}]});
+        }
+
+        const settings=typeof track.getSettings==="function" ? track.getSettings() : {};
+        if(settings.width && settings.height){
+          cameraDetail=` Camera: ${settings.width} × ${settings.height}.`;
+        }
+
+        if(settings.focusMode){
+          cameraDetail+=` Focus: ${settings.focusMode}.`;
+        }
+      }catch(err){
+        console.warn("Scanner camera focus enhancement unavailable",err);
+      }
+    }
+
     if(!finished){
-      status.textContent="Camera ready. Hold the barcode or QR code steady inside the camera view.";
+      status.textContent=`Camera ready.${cameraDetail} Hold the barcode or QR code steady inside the camera view.`;
     }else{
       stopScanner();
     }
