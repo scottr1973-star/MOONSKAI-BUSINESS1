@@ -145,7 +145,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 .bottom-nav{
   position:fixed;left:0;right:0;bottom:0;z-index:50;
-  min-height:92px;display:grid;grid-template-columns:repeat(5,1fr);
+  min-height:92px;display:grid;grid-template-columns:repeat(6,1fr);
   padding:8px max(8px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));
   background:rgba(5,14,25,.97);backdrop-filter:blur(20px);border-top:1px solid var(--line)
 }
@@ -258,6 +258,7 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.07
   .nav-label{font-size:12px}
 }
 @media(max-width:390px){
+  .nav-label{font-size:10px}
   .hero h2{font-size:34px}
   .stats{grid-template-columns:1fr 1fr}
   .brand-row p{display:none}
@@ -447,3 +448,91 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.07
 .clickable-list-card{cursor:pointer}
 .clickable-list-card:hover{border-color:var(--cyan)}
 @media(max-width:640px){.dashboard-capture-bar{align-items:flex-start;flex-direction:column;padding:12px}.dashboard-capture-actions{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.dashboard-capture-actions .btn{padding-left:8px;padding-right:8px}}
+
+/* Auction priority */
+.auction-priority{display:inline-flex;align-items:center;margin:0 0 14px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.priority-high{border-color:#ef4444;background:rgba(239,68,68,.12)}
+.priority-medium{border-color:#f59e0b;background:rgba(245,158,11,.12)}
+.priority-low{border-color:#64748b;background:rgba(100,116,139,.12)}
+
+/* Auction day grouping and timing conflicts */
+.auction-day-groups{display:grid;gap:20px}
+.auction-day-group{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);padding:16px}
+.auction-day-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+.auction-day-head h3{margin:0;font-size:20px}
+.auction-day-head p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.auction-manager-card{align-items:center}
+.auction-card-topline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.auction-priority-small{margin:0;padding:4px 8px;font-size:10px}
+.auction-time-conflict{border-color:#ff718a;box-shadow:0 0 0 1px rgba(255,113,138,.16)}
+.auction-conflict-note{margin-top:9px;color:#ff9bab;font-size:12px;font-weight:800;line-height:1.4}
+@media(max-width:640px){.auction-day-group{padding:12px}.auction-manager-card{align-items:flex-start}.auction-day-head h3{font-size:18px}}
+
+/* Dashboard auction-day summaries */
+.dashboard-auction-day{width:100%;text-align:left;color:inherit;font:inherit}
+.dashboard-auction-day h4{margin:0 0 5px}
+.dashboard-auction-day-arrow{color:var(--cyan);font-size:12px;font-weight:900;white-space:nowrap}
+@media(max-width:640px){.dashboard-auction-day{align-items:center}.dashboard-auction-day-arrow{font-size:11px}}
+
+/* Business Snapshot drill-downs */
+.snapshot-stat{width:100%;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.snapshot-stat:hover{border-color:rgba(83,226,212,.5)}
+.snapshot-stat:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.snapshot-stat-hint{margin-top:9px;color:var(--cyan);font-size:11px;font-weight:900}
+.snapshot-breakdown-total{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin-bottom:10px;border:1px solid var(--line);border-radius:14px;background:rgba(83,226,212,.06)}
+.snapshot-breakdown-total span{color:var(--muted);font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:.06em}
+.snapshot-breakdown-total strong{font-size:24px}
+.snapshot-breakdown-copy{color:var(--muted);line-height:1.5;margin:0 0 14px}
+.snapshot-breakdown-row{width:100%;text-align:left;color:inherit;font:inherit}
+.snapshot-breakdown-row>strong{font-size:16px;white-space:nowrap}
+.money-net-breakdown{display:grid;gap:0}
+.money-breakdown-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 2px;border-bottom:1px solid var(--line)}
+.money-breakdown-row:last-child{border-bottom:0}
+.money-breakdown-row span{color:var(--muted);font-weight:750}
+.money-breakdown-row strong{font-size:17px}
+.money-breakdown-total{margin-top:4px;padding-top:18px}
+.money-breakdown-total span,.money-breakdown-total strong{font-size:21px;font-weight:1000}
+.money-overview-note{margin-top:12px;color:var(--muted);line-height:1.5}
+@media(max-width:640px){.snapshot-breakdown-row{align-items:center}.snapshot-breakdown-total strong{font-size:21px}.money-breakdown-row{gap:10px}}
+
+/* Watch Lot priority, timing and fast listing access */
+.auction-lot-preview{display:grid;gap:7px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.auction-lot-preview-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.025)}
+.auction-lot-preview-row>div{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:5px 8px;min-width:0}
+.auction-lot-preview-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.auction-lot-preview-row small{grid-column:1/-1;color:var(--muted);font-size:11px}
+.auction-lot-more{color:var(--muted);font-size:12px;font-weight:800;padding:2px 4px}
+.auction-lot-missing{color:var(--red);font-size:11px;font-weight:800;white-space:nowrap}
+.watch-lot-card{align-items:center}
+.watch-lot-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.watch-lot-conflict-label{color:#ff9bab;font-size:11px;font-weight:900}
+.lot-time-conflict{border-color:#ff718a!important;box-shadow:0 0 0 1px rgba(255,113,138,.16)}
+@media(max-width:640px){.auction-lot-preview-row,.watch-lot-card{align-items:flex-start}.watch-lot-actions{width:100%;justify-content:flex-start}.auction-lot-preview-row{flex-direction:column}.auction-lot-preview-row .btn{width:100%}}
+
+/* Inventory organization and summary */
+.inventory-organize-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 13px;padding:13px 15px;border:1px solid var(--line);border-radius:16px;background:rgba(83,226,212,.045)}
+.inventory-organize-copy{display:grid;gap:3px}
+.inventory-organize-copy strong{font-size:14px}
+.inventory-organize-copy small{color:var(--muted);font-size:12px;line-height:1.35}
+.inventory-organize-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.inventory-summary-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.inventory-summary-stats>div{border:1px solid var(--line);border-radius:14px;padding:13px;background:rgba(255,255,255,.025)}
+.inventory-summary-stats span{display:block;color:var(--muted);font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}
+.inventory-summary-stats strong{display:block;margin-top:7px;font-size:21px}
+.inventory-summary-controls{display:flex;align-items:end;justify-content:space-between;gap:14px;margin:0 0 12px}
+.inventory-summary-controls>div{display:grid;gap:3px}
+.inventory-summary-controls small{color:var(--muted);font-size:12px}
+.inventory-summary-controls .select{width:min(240px,100%)}
+.inventory-summary-group h4{margin:0 0 5px}
+@media(max-width:700px){.inventory-organize-bar{align-items:stretch;flex-direction:column}.inventory-organize-actions{justify-content:flex-start}.inventory-organize-actions .btn{flex:1 1 150px}.inventory-summary-stats{grid-template-columns:1fr}.inventory-summary-controls{align-items:stretch;flex-direction:column}.inventory-summary-controls .select{width:100%}}
+
+/* Bulk Calendar export */
+.calendar-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.calendar-export-intro,.calendar-export-help{border:1px solid var(--line);border-radius:15px;padding:14px 15px;background:rgba(255,255,255,.025);margin-bottom:14px}
+.calendar-export-intro strong,.calendar-export-help strong{display:block;margin-bottom:5px}
+.calendar-export-intro p,.calendar-export-help p{margin:5px 0;color:var(--muted);line-height:1.5}
+.calendar-export-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.calendar-export-count{display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid var(--line);border-radius:15px;padding:14px 15px;margin:14px 0;background:rgba(83,226,212,.045)}
+.calendar-export-count span{font-weight:800}
+.calendar-export-count strong{font-size:24px}
+@media(max-width:640px){.calendar-head-actions{width:100%;justify-content:flex-start}.calendar-head-actions .btn{flex:1 1 145px}.calendar-export-range{grid-template-columns:1fr}}

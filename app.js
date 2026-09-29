@@ -215,11 +215,12 @@ async function navigate(route){
     inventory:"Everything you own and sell",
     calendar:"Fairs, festivals, pickups and events",
     money:"Sales, expenses and mileage",
-      more:"Auctions, backups and tools",
+      auctions:"Auctions, watch lots and sourcing",
+      more:"Backups, exports and business tools",
       guide:"Instructions and everyday workflows"
   })[route] || "Business Organizer";
 
-  fab.setAttribute("aria-label", route==="calendar"?"Add event":route==="money"?"Add expense":route==="more"?"Add auction":"Add item");
+  fab.setAttribute("aria-label", route==="calendar"?"Add event":route==="money"?"Add expense":route==="auctions"?"Add auction":"Add item");
   await render();
   view.focus();
 }
@@ -230,6 +231,7 @@ async function render(){
   if(state.route==="calendar")return renderCalendar();
     if(state.route==="guide")return renderUserGuide();
   if(state.route==="money")return renderMoney();
+  if(state.route==="auctions")return renderAuctionManager();
   return renderMore();
 }
 
@@ -257,11 +259,7 @@ const profit=revenue-soldCost-saleCostsTotal-expensesTotal;
   const needsPhotos=unsold.filter(i=>!photoItems.has(i.id)).length;
 
   const upcoming=events.filter(e=>new Date(e.startDate)>=startOfToday()).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate)).slice(0,5);
-  const upcomingAuctions=auctions.filter(a=>{
-    const v=a.endDateTime||a.date;
-    if(!v)return false;
-    return new Date(v.length>10?v:v+"T12:00:00")>=startOfToday();
-  }).sort((a,b)=>String(a.endDateTime||a.date).localeCompare(String(b.endDateTime||b.date))).slice(0,4);
+const upcomingAuctionRows=auctions.filter(a=>{    const v=a.endDateTime||a.date;    if(!v)return false;    return new Date(v.length>10?v:v+"T12:00:00")>=startOfToday();  }).sort((a,b)=>String(a.endDateTime||a.date).localeCompare(String(b.endDateTime||b.date)));  const dashboardAuctionGroups=new Map();  upcomingAuctionRows.forEach(a=>{    const day=String(a.endDateTime||a.date||"").slice(0,10);    if(!day)return;    if(!dashboardAuctionGroups.has(day))dashboardAuctionGroups.set(day,[]);    dashboardAuctionGroups.get(day).push(a);  });  const dashboardAuctionDays=[...dashboardAuctionGroups.entries()].slice(0,4).map(([day,rows])=>{    const highCount=rows.filter(a=>(a.priority||"Medium")==="High").length;    const timed=rows.filter(a=>a.endDateTime).slice().sort((a,b)=>String(a.endDateTime).localeCompare(String(b.endDateTime)));    let conflictCount=0;    for(let i=0;i<timed.length;i++){      for(let j=i+1;j<timed.length;j++){        const first=new Date(timed[i].endDateTime).getTime();        const second=new Date(timed[j].endDateTime).getTime();        if(!Number.isFinite(first)||!Number.isFinite(second))continue;        const difference=second-first;        if(difference>15*60*1000)break;        if(difference>=0)conflictCount++;      }    }    return {day,rows,highCount,conflictCount};  });
 
   view.innerHTML=`
       <section class="dashboard-capture-bar">
@@ -286,30 +284,58 @@ ${attentionCard("Needs Photos",needsPhotos,"No item photo stored","📷","Needs 
 
     <div class="section-head"><div><h2>Business snapshot</h2><p>Live totals from records stored on this device.</p></div></div>
     <section class="stats">
-      ${stat("In Stock",unsold.length,"items not marked sold")}
-      ${stat("Invested",money(invested),"landed cost in unsold inventory")}
-      ${stat("Asking Value",money(asking),"current asking-price total")}
-      ${stat("Estimated Net",money(profit),"sales minus sold cost and expenses",profit>=0?"kpi-positive":"kpi-negative")}
+      ${snapshotStat("In Stock",unsold.length,"items not marked sold","","stock")}
+      ${snapshotStat("Invested",money(invested),"landed cost in unsold inventory","","invested")}
+      ${snapshotStat("Combined Asking Prices",money(asking),"sum of asking prices for all unsold inventory","","asking")}
+      ${snapshotStat("Estimated Net",money(profit),"sales minus sold cost and expenses",profit>=0?"kpi-positive":"kpi-negative","net")}
     </section>
 
     <div class="section-head"><div><h2>Quick access</h2></div></div>
     <section class="quick-grid">
       ${quick("▦","Inventory","inventory")}
       ${quick("▣","Calendar","calendar")}
-      ${quick("◆","Auctions","more")}
+      ${quick("◆","Auctions","auctions")}
       ${quick("$","Money","money")}
     </section>
 
     <div class="section-head"><div><h2>Coming up</h2><p>Events and sourcing opportunities.</p></div></div>
     <section class="grid-2">
       <div class="panel"><h3>Upcoming events</h3><div class="list">${upcoming.length?upcoming.map(eventListItem).join(""):empty("No upcoming events yet.")}</div></div>
-      <div class="panel"><h3>Online / upcoming auctions</h3><div class="list">${upcomingAuctions.length?upcomingAuctions.map(auctionListItem).join(""):empty("No auctions being tracked yet.")}</div></div>
+<div class="panel"><h3>Upcoming auctions</h3><div class="list">${dashboardAuctionDays.length?dashboardAuctionDays.map(group=>{        const dayLabel=new Date(`${group.day}T12:00:00`).toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});        const details=[];        if(group.highCount)details.push(`${group.highCount} high priority`);        if(group.conflictCount)details.push(`${group.conflictCount} time conflict${group.conflictCount===1?"":"s"}`);        if(!details.length)details.push("No priority conflicts");        return `<button class="list-card clickable-list-card dashboard-auction-day" data-jump="auctions" type="button"><div><h4>${esc(dayLabel)} — ${group.rows.length} auction${group.rows.length===1?"":"s"}</h4><p>${esc(details.join(" · "))}</p></div><span class="dashboard-auction-day-arrow">View →</span></button>`;      }).join(""):empty("No auctions being tracked yet.")}</div></div>
     </section>
   `;
 
   $("#homeCamera").onclick=()=>startCameraCapture();
   $("#homeGallery").onclick=()=>$("#globalGalleryInput").click();
   $("#homeManual").onclick=()=>openItemModal();
+  $$("[data-snapshot]").forEach(card=>card.onclick=()=>{
+    const action=card.dataset.snapshot;
+    if(action==="stock"){
+      state.inventorySearch="";
+      state.inventoryStatus="active";
+      state.inventoryCategory="all";
+      state.inventorySource="all";
+      state.inventoryLocation="all";
+      state.inventorySort="updated";
+      state.inventoryAttention="";
+      navigate("inventory");
+      return;
+    }
+    if(action==="invested"){
+      const rows=unsold.slice().sort((a,b)=>itemCost(b)-itemCost(a));
+      openSnapshotBreakdown("Invested Inventory","Landed cost currently tied up in unsold inventory.",rows,item=>itemCost(item),invested);
+      return;
+    }
+    if(action==="asking"){
+      const rows=unsold.slice().sort((a,b)=>num(b.askingPrice)-num(a.askingPrice));
+      openSnapshotBreakdown("Combined Asking Prices","Sum of asking prices for all unsold inventory.",rows,item=>num(item.askingPrice),asking);
+      return;
+    }
+    if(action==="net"){
+      state.moneyTab="overview";
+      navigate("money");
+    }
+  });
 $$("[data-jump]").forEach(b=>b.onclick=()=>{if(b.dataset.attention)state.inventoryAttention=b.dataset.attention;navigate(b.dataset.jump);});
   $$("[data-event-id]").forEach(el=>el.onclick=()=>openEventModal(events.find(e=>e.id===el.dataset.eventId)));
   $$("[data-auction-detail-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.auctionDetailId));
@@ -352,7 +378,7 @@ else if(state.inventorySort==="priceLow")filtered.sort((a,b)=>num(a.askingPrice)
 
   view.innerHTML=`
     <div class="section-head">
-      <div><h2>Inventory</h2><p>${items.length} total item${items.length===1?"":"s"} stored locally.</p></div>
+      <div><h2>Inventory</h2><p>${filtered.length===items.length?`${items.length} total item${items.length===1?"":"s"} stored locally.`:`${filtered.length} matching item${filtered.length===1?"":"s"} · ${items.length} total`}</p></div>
       <div class="inventory-head-actions">
         <button class="btn camera-btn small" id="inventoryCamera">📷 Capture</button>
           <button class="btn secondary small" id="printInventoryLabels">🏷 Print Labels</button>
@@ -360,6 +386,17 @@ else if(state.inventorySort==="priceLow")filtered.sort((a,b)=>num(a.askingPrice)
         <button class="btn secondary small" id="addItemTop">＋ Manual</button>
       </div>
     </div>
+  <div class="inventory-organize-bar">
+    <div class="inventory-organize-copy">
+      <strong>Organize Inventory</strong>
+      <small>Categories and storage locations belong here so they are easy to find.</small>
+    </div>
+    <div class="inventory-organize-actions">
+      <button class="btn secondary small" id="inventoryManageCategories" type="button">🏷 Manage Categories</button>
+      <button class="btn secondary small" id="inventoryManageLocations" type="button">📦 Manage Locations</button>
+      <button class="btn secondary small" id="inventorySummary" type="button">▦ Inventory Summary</button>
+    </div>
+  </div>
 <div class="toolbar">
   <input class="input search" id="inventorySearch" placeholder="Search inventory…" value="${esc(state.inventorySearch)}">
   <select class="select" id="inventoryStatus">
@@ -399,6 +436,9 @@ else if(state.inventorySort==="priceLow")filtered.sort((a,b)=>num(a.askingPrice)
   $("#addItemTop").onclick=()=>openItemModal();
   $("#printInventoryLabels").onclick=()=>openLabelSheetPrinter(filtered);
   $("#scanInventoryCode").onclick=()=>openInventoryCodeScanner();
+  $("#inventoryManageCategories").onclick=()=>openItemCategoriesModal();
+  $("#inventoryManageLocations").onclick=()=>openStorageLocationsModal();
+  $("#inventorySummary").onclick=()=>openInventorySummary(filtered);
 $("#inventorySearch").oninput=e=>{state.inventorySearch=e.target.value;renderInventory();};
 $("#inventoryStatus").onchange=e=>{state.inventoryStatus=e.target.value;state.inventoryAttention="";renderInventory();};
 $("#inventoryCategory").onchange=e=>{state.inventoryCategory=e.target.value;renderInventory();};
@@ -755,7 +795,7 @@ async function renderCalendar(){
   const upcoming=[...events.map(event=>({kind:"event",when:event.startDate,record:event})),...auctions.map(auction=>({kind:"auction",when:auction.endDateTime||auction.date,record:auction}))].filter(entry=>String(entry.when||"").slice(0,10)>=today()).sort((a,b)=>String(a.when).localeCompare(String(b.when))).slice(0,8);
 
   view.innerHTML=`
-    <div class="section-head"><div><h2>Calendar</h2><p>Keep fairs, festivals, pickups, auctions and appointments together.</p></div><button class="btn small" id="addEventTop">＋ Event</button></div>
+    <div class="section-head"><div><h2>Calendar</h2><p>Keep fairs, festivals, pickups, auctions and appointments together.</p></div><div class="calendar-head-actions"><button class="btn secondary small" id="exportCalendarTop" type="button">↗ Export Calendar</button><button class="btn small" id="addEventTop" type="button">＋ Event</button></div></div>
     <section class="calendar-wrap">
       <div class="calendar">
         <div class="cal-head"><button class="btn ghost small" id="prevMonth">←</button><strong>${first.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</strong><button class="btn ghost small" id="nextMonth">→</button></div>
@@ -768,6 +808,7 @@ async function renderCalendar(){
     </section>
   `;
   $("#addEventTop").onclick=()=>openEventModal();
+  $("#exportCalendarTop").onclick=()=>openCalendarExportModal(events,auctions);
   $("#prevMonth").onclick=()=>{state.calendarDate=new Date(year,month-1,1);renderCalendar();};
   $("#nextMonth").onclick=()=>{state.calendarDate=new Date(year,month+1,1);renderCalendar();};
   $$("[data-event-id]").forEach(el=>el.onclick=()=>openEventModal(events.find(e=>e.id===el.dataset.eventId)));
@@ -776,7 +817,7 @@ async function renderCalendar(){
 
 function calendarAuctionListItem(a){
   const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);
-  return `<div class="list-card" data-calendar-auction-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""}</p></div></div>`;
+  return `<div class="list-card" data-calendar-auction-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""} · ${esc(a.priority||"Medium")} priority</p></div></div>`;
 }
 
 function calendarDay(day,currentMonth,events,auctions){
@@ -790,6 +831,255 @@ function calendarDay(day,currentMonth,events,auctions){
   let cls="cal-day";if(day.getMonth()!==currentMonth)cls+=" muted";if(key===today())cls+=" today";
   return `<div class="${cls}"><div class="cal-num">${day.getDate()}</div><div class="cal-events">${markers.slice(0,5).join("")}</div></div>`;
 }
+
+function icsText(value){
+  const slash=String.fromCharCode(92);
+  return String(value??"")
+    .split(slash).join(slash+slash)
+    .split(String.fromCharCode(13)).join("")
+    .split(String.fromCharCode(10)).join(slash+"n")
+    .split(",").join(slash+",")
+    .split(";").join(slash+";");
+}
+
+function icsDateOnly(value){
+  return String(value||"").slice(0,10).replaceAll("-","");
+}
+
+function icsLocalDateTime(value){
+  const raw=String(value||"");
+  if(raw.length<16)return "";
+  return raw.slice(0,10).replaceAll("-","")+"T"+raw.slice(11,16).replaceAll(":","")+"00";
+}
+
+function icsDateTimeFromDate(date){
+  const pad=value=>String(value).padStart(2,"0");
+  return String(date.getFullYear())+pad(date.getMonth()+1)+pad(date.getDate())+"T"+pad(date.getHours())+pad(date.getMinutes())+pad(date.getSeconds());
+}
+
+function icsUtcStamp(){
+  const date=new Date();
+  const pad=value=>String(value).padStart(2,"0");
+  return String(date.getUTCFullYear())+pad(date.getUTCMonth()+1)+pad(date.getUTCDate())+"T"+pad(date.getUTCHours())+pad(date.getUTCMinutes())+pad(date.getUTCSeconds())+"Z";
+}
+
+function icsEndOneHourAfter(value){
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))return icsLocalDateTime(value);
+  date.setHours(date.getHours()+1);
+  return icsDateTimeFromDate(date);
+}
+
+function icsNextDate(value){
+  const date=new Date(String(value||"").slice(0,10)+"T12:00:00");
+  if(!Number.isFinite(date.getTime()))return icsDateOnly(value);
+  date.setDate(date.getDate()+1);
+  return ymd(date).replaceAll("-","");
+}
+
+function calendarExportRows(events,auctions,include,from,to){
+  const rows=[];
+  if(include!=="auctions"){
+    events.forEach(record=>{
+      const date=String(record.startDate||"").slice(0,10);
+      if(date)rows.push({kind:"event",date,record});
+    });
+  }
+  if(include!=="events"){
+    auctions.forEach(record=>{
+      const date=String(record.endDateTime||record.date||"").slice(0,10);
+      if(date)rows.push({kind:"auction",date,record});
+    });
+  }
+  return rows
+    .filter(row=>(!from||row.date>=from)&&(!to||row.date<=to))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+function icsFoldLine(line){
+  const encoder=new TextEncoder();
+  const crlf=String.fromCharCode(13,10);
+  const parts=[];
+  let current="";
+  let limit=75;
+  for(const char of String(line)){
+    const candidate=current+char;
+    if(current&&encoder.encode(candidate).length>limit){
+      parts.push(current);
+      current=char;
+      limit=74;
+    }else{
+      current=candidate;
+    }
+  }
+  parts.push(current);
+  return parts.join(crlf+" ");
+}
+
+function buildCalendarIcs(rows){
+  const crlf=String.fromCharCode(13,10);
+  const lines=[
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Moonskai Labs L.L.C.//Moonskai Business Organizer//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Moonskai Business Organizer"
+  ];
+  const stamp=icsUtcStamp();
+  rows.forEach(entry=>{
+    if(entry.kind==="event"){
+      const event=entry.record;
+      const start=icsLocalDateTime(event.startDate);
+      if(!start)return;
+      const end=event.endDate?icsLocalDateTime(event.endDate):icsEndOneHourAfter(event.startDate);
+      const location=[event.location,event.address].map(value=>String(value||"").trim()).filter(Boolean).join(" - ");
+      const details=[
+        event.type?"Type: "+event.type:"",
+        event.contact?"Contact: "+event.contact:"",
+        event.boothNumber?"Booth: "+event.boothNumber:"",
+        event.website?"Website: "+event.website:"",
+        event.notes||""
+      ].filter(Boolean).join(" | ");
+      lines.push(
+        "BEGIN:VEVENT",
+        "UID:mbo-event-"+icsText(event.id||entry.date)+"@moonskai.local",
+        "DTSTAMP:"+stamp,
+        "DTSTART:"+start,
+        "DTEND:"+end,
+        "SUMMARY:"+icsText(event.title||"Business Event")
+      );
+      if(location)lines.push("LOCATION:"+icsText(location));
+      if(details)lines.push("DESCRIPTION:"+icsText(details));
+      if(event.website)lines.push("URL:"+String(event.website));
+      lines.push("END:VEVENT");
+    }else{
+      const auction=entry.record;
+      const details=[
+        auction.platform?"Platform: "+auction.platform:"",
+        auction.company?"Company: "+auction.company:"",
+        auction.priority?"Priority: "+auction.priority:"",
+        auction.status?"Status: "+auction.status:"",
+        auction.website?"Website: "+auction.website:"",
+        auction.notes||""
+      ].filter(Boolean).join(" | ");
+      lines.push(
+        "BEGIN:VEVENT",
+        "UID:mbo-auction-"+icsText(auction.id||entry.date)+"@moonskai.local",
+        "DTSTAMP:"+stamp
+      );
+      if(auction.endDateTime){
+        lines.push("DTSTART:"+icsLocalDateTime(auction.endDateTime));
+        lines.push("DTEND:"+icsEndOneHourAfter(auction.endDateTime));
+      }else{
+        lines.push("DTSTART;VALUE=DATE:"+icsDateOnly(auction.date));
+        lines.push("DTEND;VALUE=DATE:"+icsNextDate(auction.date));
+      }
+      lines.push("SUMMARY:"+icsText("Auction: "+(auction.name||"Tracked Auction")));
+      if(auction.location)lines.push("LOCATION:"+icsText(auction.location));
+      if(details)lines.push("DESCRIPTION:"+icsText(details));
+      if(auction.website)lines.push("URL:"+String(auction.website));
+      lines.push("END:VEVENT");
+    }
+  });
+  lines.push("END:VCALENDAR");
+  return lines.map(icsFoldLine).join(crlf)+crlf;
+}
+
+function openCalendarExportModal(events,auctions){
+  const viewedMonth=state.calendarDate;
+  const monthLabel=viewedMonth.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">CALENDAR</div><h2>Export Calendar</h2></div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="calendar-export-intro">
+        <strong>Send many Organizer dates to Google Calendar at once</strong>
+        <p>This creates one standard calendar file. Download it here, then import that file into Google Calendar.</p>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>What dates?</label>
+          <select class="select" id="calendarExportRange">
+            <option value="all">Everything</option>
+            <option value="month">This calendar month - ${esc(monthLabel)}</option>
+            <option value="custom">Choose date range</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Include</label>
+          <select class="select" id="calendarExportInclude">
+            <option value="both">Events and Auctions</option>
+            <option value="events">Events only</option>
+            <option value="auctions">Auctions only</option>
+          </select>
+        </div>
+      </div>
+      <div class="calendar-export-range" id="calendarExportCustom" hidden>
+        <div class="field"><label>From</label><input class="input" id="calendarExportFrom" type="date"></div>
+        <div class="field"><label>Through</label><input class="input" id="calendarExportTo" type="date"></div>
+      </div>
+      <div class="calendar-export-count">
+        <span>Items that will be exported</span>
+        <strong id="calendarExportCount">0</strong>
+      </div>
+      <div class="calendar-export-help">
+        <strong>How to put the file in Google Calendar</strong>
+        <p>1. Download the calendar file below.</p>
+        <p>2. In Google Calendar, open Settings, then Import & export.</p>
+        <p>3. Choose the downloaded .ics file and select the Google calendar where these dates should be added.</p>
+        <p>This is a one-way export. Later changes made in the Organizer do not automatically change copies already imported into Google Calendar.</p>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="openGoogleCalendarImport" type="button">Open Google Calendar Import</button>
+      <button class="btn ghost" data-close type="button">Cancel</button>
+      <button class="btn" id="downloadCalendarExport" type="button">Download Calendar File</button>
+    </div>
+  `);
+  const range=$("#calendarExportRange");
+  const include=$("#calendarExportInclude");
+  const custom=$("#calendarExportCustom");
+  const from=$("#calendarExportFrom");
+  const to=$("#calendarExportTo");
+  const count=$("#calendarExportCount");
+  const bounds=()=>{
+    if(range.value==="all")return ["",""];
+    if(range.value==="custom")return [from.value,to.value];
+    const year=viewedMonth.getFullYear();
+    const month=viewedMonth.getMonth();
+    const first=ymd(new Date(year,month,1));
+    const last=ymd(new Date(year,month+1,0));
+    return [first,last];
+  };
+  const matching=()=>{
+    const [start,end]=bounds();
+    return calendarExportRows(events,auctions,include.value,start,end);
+  };
+  const refresh=()=>{
+    custom.hidden=range.value!=="custom";
+    count.textContent=String(matching().length);
+  };
+  range.onchange=refresh;
+  include.onchange=refresh;
+  from.onchange=refresh;
+  to.onchange=refresh;
+  $("#downloadCalendarExport").onclick=()=>{
+    const [start,end]=bounds();
+    if(range.value==="custom"&&(!start||!end)){alert("Choose both the From and Through dates.");return;}
+    if(start&&end&&start>end){alert("The From date must be on or before the Through date.");return;}
+    const rows=matching();
+    if(!rows.length){alert("There are no matching calendar items to export.");return;}
+    const content=buildCalendarIcs(rows);
+    downloadFile("moonskai-calendar-"+today()+".ics",content,"text/calendar;charset=utf-8");
+    toast(rows.length+" calendar item"+(rows.length===1?"":"s")+" exported.");
+  };
+  $("#openGoogleCalendarImport").onclick=()=>openExternalUrl("https://calendar.google.com/calendar/u/0/r/settings/export","Google Calendar import");
+  refresh();
+}
+
 
 async function openEventModal(event){
   const edit=!!event;
@@ -848,13 +1138,25 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
   view.innerHTML=`
     <div class="section-head"><div><h2>Money</h2><p>Sales, expenses and business mileage.</p></div><button class="btn small" id="addExpenseTop">＋ Expense</button></div>
     <section class="stats">${stat("Sales",money(revenue),"gross revenue")}${stat("Expenses",money(expTotal),"recorded business expenses")}${stat("Mileage",miles.toFixed(1)+" mi","business travel")}${stat("Estimated Net",money(profit),"before taxes",profit>=0?"kpi-positive":"kpi-negative")}</section>
-<div class="money-tabs">${["expenses","mileage","sales","register"].map(t=>`<button class="tab-btn ${state.moneyTab===t?"active":""}" data-money-tab="${t}">${t==="register"?"Register":cap(t)}</button>`).join("")}${state.moneyTab==="register"?`<button class="btn small" id="recordSaleTop">＋ Record Sale</button>`:""}</div>
+<div class="money-tabs">${["overview","expenses","mileage","sales","register"].map(t=>`<button class="tab-btn ${state.moneyTab===t?"active":""}" data-money-tab="${t}">${t==="overview"?"Overview":t==="register"?"Register":cap(t)}</button>`).join("")}${state.moneyTab==="register"?`<button class="btn small" id="recordSaleTop">＋ Record Sale</button>`:""}</div>
     <div id="moneyContent"></div>
   `;
   $("#addExpenseTop").onclick=()=>openExpenseModal();
   $$("[data-money-tab]").forEach(b=>b.onclick=()=>{state.moneyTab=b.dataset.moneyTab;renderMoney();});
 
-  if(state.moneyTab==="expenses"){
+  if(state.moneyTab==="overview"){
+    $("#moneyContent").innerHTML=`
+      <div class="section-head"><div><h3>Business Summary</h3><p>How Estimated Net is calculated from the records currently stored in the Organizer.</p></div></div>
+      <div class="panel money-net-breakdown">
+        <div class="money-breakdown-row"><span>Sales revenue</span><strong>${money(revenue)}</strong></div>
+        <div class="money-breakdown-row"><span>Sold inventory cost</span><strong>− ${money(cost)}</strong></div>
+        <div class="money-breakdown-row"><span>Selling costs</span><strong>− ${money(saleCostsTotal)}</strong></div>
+        <div class="money-breakdown-row"><span>General business expenses</span><strong>− ${money(expTotal)}</strong></div>
+        <div class="money-breakdown-row money-breakdown-total"><span>Estimated Net</span><strong class="${profit>=0?"kpi-positive":"kpi-negative"}">${money(profit)}</strong></div>
+      </div>
+      <div class="panel money-overview-note"><p>Estimated Net is a business operating estimate before taxes. Capitalized inventory acquisition expenses are excluded from general expenses because they are already included in item cost basis.</p></div>
+    `;
+  }else if(state.moneyTab==="expenses"){
     expenses.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const expenseReportHeaderSetting=await DB.getOne("settings","expenseReportHeader");
     const savedExpenseReportHeader=String(expenseReportHeaderSetting?.value||"");
@@ -900,7 +1202,8 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
             <button class="btn secondary small" id="expenseSelectAll" type="button">Select All</button>
             <button class="btn ghost small" id="expenseClearAll" type="button">Clear</button>
             <button class="btn secondary small" id="expenseExportReport" type="button">Export Report CSV</button>
-            <button class="btn secondary small" id="expensePrintReport" type="button">Print / Save PDF</button>
+            <button class="btn secondary small" id="expensePrintReport" type="button">Print</button>
+              <button class="btn secondary small" id="expenseSavePdf" type="button">Save PDF</button>
           </div>
         </div>
 
@@ -1101,20 +1404,135 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
       toast("Expense report CSV exported.");
     };
 
-    $("#expensePrintReport").onclick=()=>{
+    const saveExpenseReportPdf=report=>{
+      const jsPDFClass=window.jspdf&&window.jspdf.jsPDF;
+      if(!jsPDFClass){
+        alert("The PDF generator did not load. Refresh the app and try again.");
+        return;
+      }
+      const doc=new jsPDFClass({orientation:"landscape",unit:"mm",format:"a4"});
+      if(typeof doc.autoTable!=="function"){
+        alert("The PDF table generator did not load. Refresh the app and try again.");
+        return;
+      }
+      const pageWidth=doc.internal.pageSize.getWidth();
+      const margin=12;
+      const contentWidth=pageWidth-(margin*2);
+      const clean=value=>String(value??"").replace(/[^ -~]/g,"?");
+      const categoryText=clean(report.categories.join(", "));
+      const summary=[
+        ["Period",clean(report.period)],
+        ["Categories",categoryText],
+        ["Matching Expenses",String(report.rows.length)],
+        ["Grand Total",money(report.total)]
+      ];
+      if(report.header){
+        doc.setFont("helvetica","bold");
+        doc.setFontSize(18);
+        doc.text(clean(report.header),margin,14);
+      }
+      doc.setFont("helvetica","normal");
+      doc.setFontSize(12);
+      doc.text("Expense Report",margin,report.header?21:14);
+      const summaryY=report.header?27:20;
+      const gap=3;
+      const boxWidth=(contentWidth-(gap*3))/4;
+      const boxHeight=22;
+      summary.forEach((entry,index)=>{
+        const x=margin+(index*(boxWidth+gap));
+        doc.setDrawColor(185);
+        doc.setFillColor(247,247,247);
+        doc.roundedRect(x,summaryY,boxWidth,boxHeight,2,2,"FD");
+        doc.setFont("helvetica","bold");
+        doc.setFontSize(7);
+        doc.setTextColor(95);
+        doc.text(entry[0].toUpperCase(),x+3,summaryY+5);
+        doc.setFontSize(index===1?8:10);
+        doc.setTextColor(20);
+        const valueLines=doc.splitTextToSize(clean(entry[1]),boxWidth-6).slice(0,3);
+        doc.text(valueLines,x+3,summaryY+11);
+      });
+      const body=report.rows.map(e=>[
+        prettyDate(e.date),
+        clean(e.category||""),
+        clean(e.vendor||""),
+        clean(e.description||""),
+        money(e.amount),
+        String(receiptCounts.get(e.id)||0),
+        clean(e.paymentMethod||""),
+        clean(e.notes||"")
+      ]);
+      doc.autoTable({
+        startY:summaryY+boxHeight+7,
+        margin:{left:margin,right:margin,bottom:16},
+        head:[["Date","Category","Vendor","Description","Amount","Receipts","Payment Method","Notes"]],
+        body,
+        foot:[["","","","Grand Total",money(report.total),"","",""]],
+        theme:"grid",
+        styles:{
+          font:"helvetica",
+          fontSize:7.5,
+          cellPadding:2.2,
+          textColor:[25,25,25],
+          lineColor:[185,185,185],
+          lineWidth:0.15,
+          valign:"top",
+          overflow:"linebreak"
+        },
+        headStyles:{
+          fillColor:[235,235,235],
+          textColor:[20,20,20],
+          fontStyle:"bold",
+          lineColor:[165,165,165],
+          lineWidth:0.2
+        },
+        footStyles:{
+          fillColor:[245,245,245],
+          textColor:[20,20,20],
+          fontStyle:"bold",
+          lineColor:[165,165,165],
+          lineWidth:0.2
+        },
+        columnStyles:{
+          0:{cellWidth:22},
+          1:{cellWidth:31},
+          2:{cellWidth:31},
+          3:{cellWidth:50},
+          4:{cellWidth:24,halign:"right"},
+          5:{cellWidth:19,halign:"center"},
+          6:{cellWidth:31},
+          7:{cellWidth:58}
+        },
+        didDrawPage:()=>{
+          const pageNumber=doc.internal.getCurrentPageInfo().pageNumber;
+          const pageHeight=doc.internal.pageSize.getHeight();
+          doc.setFont("helvetica","normal");
+          doc.setFontSize(7);
+          doc.setTextColor(100);
+          doc.text("Generated "+new Date().toLocaleString(),margin,pageHeight-6);
+          doc.text("Page "+pageNumber,pageWidth-margin,pageHeight-6,{align:"right"});
+        }
+      });
+      doc.save("expense-report-"+today()+".pdf");
+      toast("Expense report PDF saved.");
+    };
+
+
+    const openExpenseReport=mode=>{
       const report=buildExpenseReport();
       if(!report.categories.length){
         alert("Select at least one expense category.");
         return;
       }
       if(!report.rows.length){
-        alert("There are no matching expenses to print.");
+        alert("There are no matching expenses in this report.");
         return;
       }
 
+      if(mode==="pdf"){saveExpenseReportPdf(report);return;}
       const w=window.open("","_blank","width=1000,height=800");
       if(!w){
-        alert("Allow pop-ups to print or save the expense report.");
+        alert("Allow pop-ups to open the expense report.");
         return;
       }
 
@@ -1151,6 +1569,10 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
             td.money{text-align:right;white-space:nowrap}
             tfoot td{font-weight:700;background:#f5f5f5}
             .generated{margin-top:14px;font-size:10px;color:#666}
+            .report-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:12px;border:1px solid #ccc;border-radius:8px;background:#f7f7f7}
+            .report-toolbar .hint{flex:1 1 320px;font-size:12px;color:#444;line-height:1.4}
+            .report-toolbar button{border:1px solid #999;border-radius:7px;background:#fff;color:#111;padding:8px 12px;font-weight:700;cursor:pointer}
+            @media print{.report-toolbar{display:none!important}}
             @media print{
               body{padding:0}
               .summary div{break-inside:avoid}
@@ -1161,6 +1583,12 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
           </style>
         </head>
         <body>
+          <div class="report-toolbar">
+            <div class="hint"><strong>Expense Report</strong><br>Print opens the browser print dialog. Save as PDF downloads a PDF file directly.</div>
+            <button id="reportPrint" type="button">Print</button>
+            <button id="reportSavePdf" type="button">Save as PDF</button>
+            <button id="closeReport" type="button">Close</button>
+          </div>
           ${report.header?`<h1>${esc(report.header)}</h1>`:""}
           <h2>Expense Report</h2>
 
@@ -1201,8 +1629,17 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
 
       w.document.close();
       w.focus();
-      setTimeout(()=>w.print(),250);
+      const reportPrint=w.document.getElementById("reportPrint");
+      const reportSavePdf=w.document.getElementById("reportSavePdf");
+      const closeReport=w.document.getElementById("closeReport");
+      if(reportPrint)reportPrint.onclick=()=>w.print();
+      if(reportSavePdf)reportSavePdf.onclick=()=>saveExpenseReportPdf(report);
+      if(closeReport)closeReport.onclick=()=>w.close();
+      if(mode==="print")setTimeout(()=>w.print(),250);
     };
+
+    $("#expensePrintReport").onclick=()=>openExpenseReport("print");
+    $("#expenseSavePdf").onclick=()=>openExpenseReport("pdf");
 
     $("#expenseSelectAll").onclick=()=>{
       categoryChecks.forEach(input=>input.checked=true);
@@ -1951,12 +2388,26 @@ async function renderUserGuide(){
       <div class="panel">
         <h3>Main Sections</h3>
         <p><strong>Dashboard:</strong> Business totals, inventory attention items and upcoming activity.</p>
-        <p><strong>Inventory:</strong> Everything owned, cataloged, listed or sold.</p>
+        <p><strong>Inventory:</strong> Add, organize, search, group, label and manage everything owned, cataloged, listed or sold.</p>
         <p><strong>Calendar:</strong> Fairs, festivals, pickups, sales and other events.</p>
-        <p><strong>Money:</strong> Sales Register, expenses and mileage.</p>
-        <p><strong>More:</strong> Auctions, backups, exports and business settings.</p>
+        <p><strong>Money:</strong> Business overview, expenses, mileage, item sales and the Sales Register.</p>
+        <p><strong>Auctions:</strong> Auction sourcing, watch lots, bidding plans and winning-item intake.</p>
+        <p><strong>More:</strong> Backups, CSV exports, payment methods, persistent storage and this User Guide.</p>
       </div>
     </section>
+      <div class="section-head"><div><h3>Dashboard</h3><p>See the business at a glance and jump directly into the records behind the totals.</p></div></div>
+
+      <section class="grid-2">
+        <div class="panel">
+          <h3>Business Snapshot</h3>
+          <p>In Stock shows unsold inventory count. Invested shows landed cost tied up in unsold inventory. Combined Asking Prices is the sum of asking prices for unsold inventory. Estimated Net uses sales, sold inventory cost, selling costs and general business expenses.</p>
+          <p>The Snapshot cards are clickable. In Stock opens Inventory, Invested and Combined Asking Prices open item breakdowns, and Estimated Net opens Money → Overview.</p>
+        </div>
+        <div class="panel">
+          <h3>Upcoming Auctions</h3>
+          <p>Upcoming auctions are grouped by day so busy sourcing days are obvious. High-priority auction counts and close-time conflicts are called out, and View opens the main Auctions section.</p>
+        </div>
+      </section>
 
     <div class="section-head"><div><h3>Inventory</h3><p>Catalog, organize and find merchandise.</p></div></div>
 
@@ -1971,12 +2422,12 @@ async function renderUserGuide(){
       <div class="panel">
         <h3>Categories</h3>
         <p>Choose a category while cataloging an item. Built-in categories are available automatically.</p>
-        <p>Use More → Manage Categories to add custom categories. A custom category that is still assigned to inventory cannot be removed until those items are changed to another category.</p>
+        <p>Use Inventory → Manage Categories to add custom categories. The category filter updates automatically when categories are added. A custom category that is still assigned to inventory cannot be removed until those items are changed to another category.</p>
       </div>
 
       <div class="panel">
         <h3>Storage Locations</h3>
-        <p>Use More → Manage Storage Locations to create physical inventory locations such as Garage Shelf A, Booth Inventory or Storage Bin 3.</p>
+        <p>Use Inventory → Manage Locations to create physical inventory locations such as Garage Shelf A, Booth Inventory or Storage Bin 3.</p>
         <p>When editing an item, choose its location from the Physical location dropdown. The Inventory location filter can then show only items stored in that location.</p>
         <p>A storage location that is currently assigned to inventory cannot be removed until those items are moved to another location.</p>
       </div>
@@ -1998,6 +2449,8 @@ async function renderUserGuide(){
         <h3>Inventory Filters</h3>
         <p>Inventory can be filtered by status, category, source and storage location. It can also be sorted by acquisition date, cost or asking price.</p>
         <p>Attention shortcuts help find unfinished catalog records, items needing work, items without pricing and items without photos.</p>
+          <p>The search box checks item names, SKU and other identifiers, brand, model, category, notes, source information and storage location. When a search or filter is active, Inventory shows how many items match out of the total inventory.</p>
+          <p>Choose Inventory Summary to see the item count, combined item cost and combined asking prices for the items currently showing. The same results can be grouped by Category, Brand, Model or Storage Location.</p>
       </div>
 
       <div class="panel">
@@ -2005,6 +2458,15 @@ async function renderUserGuide(){
         <p>Add photos from the camera or gallery. Useful photos include front, back, serial number, damage, repairs and identifying details.</p>
         <p>Item notes can be added to the history from the item detail screen so important changes remain attached to that item.</p>
       </div>
+        <div class="panel">
+          <h3>Repair Costs and Item Cost</h3>
+          <p>Estimated repair or parts cost is included in the item cost used by inventory and profit calculations. Keep the repair/restoration log with the item so work performed stays attached to the record.</p>
+        </div>
+
+        <div class="panel">
+          <h3>Scanning Inventory</h3>
+          <p>Use Inventory → Scan Code to scan a Code 128 barcode or QR code containing an internal ML SKU. The scanner can use available device cameras, and a manual SKU field is available when camera scanning cannot be used.</p>
+        </div>
 
       <div class="panel">
         <h3>Deleting Inventory</h3>
@@ -2014,7 +2476,7 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Price Tags & Avery Label Sheets</h3>
-        <p>For a quick one-item tag, open an inventory item and use Print Price Tag. The tag contains the item name, asking price and internal SKU.</p>
+        <p>For a quick one-item tag, open an inventory item and use Print Label. The tag contains the item name, asking price and internal SKU.</p>
         <p>For full sheets, use Inventory → Print Labels. The batch printer places each selected inventory item on its own physical label instead of wasting one sheet per item.</p>
         <p>Current sheet presets include Avery 22808, 22804, 22807, 22806, 5160 / 8160, 5162 / 8162, 5163 / 8163 and 5164 / 8164 families.</p>
         <p>You can select individual items, begin at a later label position on a partially used sheet, choose which item information appears, and make small horizontal or vertical printer-alignment corrections.</p>
@@ -2028,7 +2490,7 @@ async function renderUserGuide(){
       <div class="panel">
         <h3>Quick Sell From Inventory</h3>
         <p>Open an available item and choose Sell Item. The Sales Register opens with that item already added to the sale.</p>
-        <p>The asking price is used as the starting sale price, but the price can be changed before completing the transaction.</p>
+        <p>The asking price is used as the starting sale price, but the actual sale price can be changed before completing the transaction when a different price is negotiated.</p>
       </div>
 
       <div class="panel">
@@ -2053,6 +2515,7 @@ async function renderUserGuide(){
         <h3>Register History</h3>
         <p>Money → Register shows transaction date, payment method, number of items, total and status. Cash transactions also show cash received and change given.</p>
         <p>The daily payment breakdown groups the current day totals by the payment methods actually used.</p>
+          <p>Money → Sales lists individual item sales. The SKU is clickable so the connected inventory record can be opened directly. Sales can also be exported from More → CSV exports.</p>
       </div>
 
       <div class="panel">
@@ -2078,8 +2541,8 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Google Calendar</h3>
-        <p>Open an Organizer event and choose Add to Google Calendar when you want a copy in Google Calendar.</p>
-        <p>The Organizer remains the main business calendar. Google Calendar export is one-way and does not synchronize changes back into the Organizer.</p>
+        <p>For one event, open the Organizer event and choose Add to Google Calendar.</p><p>For many dates at once, open Calendar and choose Export Calendar. Export Everything, the calendar month currently being viewed, or a custom From/Through date range. You can include Events, Auctions or both.</p><p>The bulk export downloads one standard .ics calendar file. In Google Calendar, open Settings → Import &amp; export, choose that file and select the Google calendar where the dates should be added.</p>
+        <p>The Organizer remains the main business calendar. Individual and bulk Google Calendar exports are one-way; changes made later in either place do not automatically synchronize.</p>
       </div>
     </section>
 
@@ -2090,6 +2553,9 @@ async function renderUserGuide(){
         <h3>Expenses</h3>
         <p>Record operating expenses such as repairs, parts, booth fees, fuel, parking, shipping, packaging and advertising.</p>
         <p>Inventory Purchase and Auction Premium costs attached to an item are treated as acquisition costs so they are not counted a second time as general expenses.</p>
+          <p>Receipt photos can be attached from the camera or gallery. Attached receipts stay with the expense record, can be opened in the receipt viewer and are included in full Organizer backups.</p>
+          <p>The Expense Calculator filters by category and date range and shows the matching count and total. Use the report header when a business or accountant heading is needed.</p>
+          <p>Print opens the formatted report and browser print dialog. Save PDF creates and downloads a real PDF directly, with the report header, summary, expense table and grand total. Expense reports can also be exported as CSV.</p>
       </div>
 
       <div class="panel">
@@ -2100,6 +2566,7 @@ async function renderUserGuide(){
       <div class="panel">
         <h3>Profit Information</h3>
         <p>The Organizer uses sale proceeds, item cost basis, selling costs and general expenses to calculate business totals shown on the Dashboard and Money screens.</p>
+          <p>Money → Overview shows the calculation directly: Sales revenue minus Sold inventory cost minus Selling costs minus General business expenses equals Estimated Net. Inventory acquisition costs already included in item cost are not counted again as general expenses.</p>
       </div>
     </section>
 
@@ -2108,12 +2575,15 @@ async function renderUserGuide(){
     <section class="grid-2">
       <div class="panel">
         <h3>Tracking Auctions</h3>
-        <p>Use More → Auctions to save online or upcoming auctions. Records can include the auction name, platform, dates and other sourcing information.</p>
+          <p>Auctions is a main navigation section. Save online or in-person auctions with the auction name, platform, date/end time, website, location, notes and High, Medium or Low priority.</p>
+          <p>Auctions are grouped by closing day. Auctions that close within 15 minutes of one another are marked as Time Conflict so Priority can help decide which needs attention first.</p>
       </div>
 
       <div class="panel">
         <h3>Connecting Inventory</h3>
-        <p>When cataloging an item, the Tracked auction field can connect that inventory item back to an auction already stored in the Organizer.</p>
+          <p>Each auction can contain Watch Lots for individual items being considered. A Watch Lot has its own required Item / lot URL, lot end date/time, High/Medium/Low priority, expected resale, maximum bid and optional winning bid and acquisition costs.</p>
+          <p>Watch Lots appear directly on Auction cards for fast access. Open Listing opens that exact item listing, while Open Auction Page opens the parent auction website.</p>
+          <p>Watch Lots closing within 15 minutes of one another are marked as Time Conflict even when they belong to different auctions. If a lot is won, it can be moved into Inventory with the lot listing URL and lot closing time retained.</p>
       </div>
     </section>
 
@@ -2166,7 +2636,7 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Organize Physical Inventory</h3>
-        <p><strong>1.</strong> Create real storage locations under More.</p>
+        <p><strong>1.</strong> Create real storage locations with Inventory → Manage Locations.</p>
         <p><strong>2.</strong> Assign each item a Physical location.</p>
         <p><strong>3.</strong> Use the Inventory Location filter whenever an item needs to be found physically.</p>
       </div>
@@ -2203,15 +2673,9 @@ async function renderUserGuide(){
 
 
 async function renderMore(){
-  const auctions=(await DB.getAll("auctions")).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   view.innerHTML=`
-    <div class="section-head"><div><h2>More</h2><p>Auctions, backups and data tools.</p></div></div>
+    <div class="section-head"><div><h2>More</h2><p>Backups, exports and business tools.</p></div></div>
     <section class="grid-2">
-      <div class="panel">
-        <h3>Online Auctions & Sourcing</h3>
-        <div class="list">${auctions.length?auctions.slice(0,5).map(auctionListItem).join(""):empty("No auctions tracked yet.")}</div>
-        <div class="hero-actions"><button class="btn secondary" id="manageAuctions">Manage Auctions</button></div>
-      </div>
       <div class="panel">
         <h3>Backup & restore</h3>
         <p style="color:var(--muted);line-height:1.55">IndexedDB is local to this device/browser. Export backups regularly. Full backups include your stored photos.</p>
@@ -2236,27 +2700,13 @@ async function renderMore(){
     <p style="color:var(--muted);line-height:1.55">Instructions for inventory, sales, calendar, money, backups and everyday business workflows.</p>
     <button class="btn secondary" id="openUserGuide">Open User Guide</button>
   </div>
-  <div class="panel">
-    <h3>Storage locations</h3>
-    <p style="color:var(--muted);line-height:1.55">Manage the physical locations available when cataloging inventory.</p>
-    <button class="btn secondary" id="manageStorageLocations">Manage Storage Locations</button>
-  </div>
-  <div class="panel">
-    <h3>Inventory categories</h3>
-    <p style="color:var(--muted);line-height:1.55">Manage the categories available when cataloging inventory.</p>
-    <button class="btn secondary" id="manageItemCategories">Manage Categories</button>
-  </div>
     </section>
   `;
-  $("#manageAuctions").onclick=()=>renderAuctionManager();
-  $$("[data-auction-detail-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.auctionDetailId));
   $("#exportBackup").onclick=exportBackup;
   $("#importBackup").onchange=importBackupFile;
   $$("[data-csv]").forEach(b=>b.onclick=()=>exportCSV(b.dataset.csv));
   $("#managePaymentMethods").onclick=()=>openPaymentMethodsModal();
   $("#openUserGuide").onclick=()=>navigate("guide");
-  $("#manageStorageLocations").onclick=()=>openStorageLocationsModal();
-$("#manageItemCategories").onclick=()=>openItemCategoriesModal();
   $("#requestStorage").onclick=async()=>toast((await DB.requestPersistentStorage())?"Persistent storage granted.":"Persistent storage not granted or unsupported.");
 }
 async function getStorageLocations(){
@@ -2531,6 +2981,58 @@ async function openPaymentMethodsModal(){
   renderList();
 }
 
+function openInventorySummary(items){
+  const rows=Array.isArray(items)?items:[];
+  const totalCost=sum(rows.map(item=>itemCost(item)));
+  const totalAsking=sum(rows.map(item=>num(item.askingPrice)));
+  openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">INVENTORY</div><h2>Inventory Summary</h2></div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+    <div class="modal-body">
+      <section class="inventory-summary-stats">
+        <div><span>Items shown</span><strong>${rows.length}</strong></div>
+        <div><span>Combined item cost</span><strong>${money(totalCost)}</strong></div>
+        <div><span>Combined asking prices</span><strong>${money(totalAsking)}</strong></div>
+      </section>
+      <div class="inventory-summary-controls">
+        <div>
+          <strong>Group these results</strong>
+          <small>Use the current search and filters, then group what is showing.</small>
+        </div>
+        <select class="select" id="inventorySummaryGroup">
+          <option value="category">Category</option>
+          <option value="brand">Brand</option>
+          <option value="model">Model</option>
+          <option value="storageLocation">Storage Location</option>
+        </select>
+      </div>
+      <div class="list" id="inventorySummaryGroups"></div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close type="button">Done</button></div>
+  `);
+  const selector=$("#inventorySummaryGroup");
+  const list=$("#inventorySummaryGroups");
+  const renderGroups=()=>{
+    const key=selector.value;
+    const groups=new Map();
+    rows.forEach(item=>{
+      const label=String(item[key]||"Unspecified").trim()||"Unspecified";
+      if(!groups.has(label))groups.set(label,[]);
+      groups.get(label).push(item);
+    });
+    const ordered=[...groups.entries()].sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0]));
+    list.innerHTML=ordered.length?ordered.map(([label,group])=>{
+      const cost=sum(group.map(item=>itemCost(item)));
+      const asking=sum(group.map(item=>num(item.askingPrice)));
+      return `<div class="list-card inventory-summary-group"><div><h4>${esc(label)}</h4><p>${group.length} item${group.length===1?"":"s"} · Cost ${money(cost)} · Asking ${money(asking)}</p></div></div>`;
+    }).join(""):empty("No matching inventory items.");
+  };
+  selector.onchange=renderGroups;
+  renderGroups();
+}
+
 async function getItemCategories(){
   const [row,items]=await Promise.all([
     DB.getOne("settings","itemCategories"),
@@ -2688,21 +3190,124 @@ async function openItemCategoriesModal(){
 }
 async function renderAuctionManager(){
   const [auctions,lots]=await Promise.all([DB.getAll("auctions"),DB.getAll("auctionLots")]);
-  auctions.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const priorityRank={High:0,Medium:1,Low:2};
+  const normalizedPriority=a=>["High","Medium","Low"].includes(a.priority)?a.priority:"Medium";
+  const auctionDay=a=>String(a.endDateTime||a.date||"").slice(0,10)||"Unscheduled";
+  const auctionSortValue=a=>a.endDateTime||`${a.date||"9999-12-31"}T23:59`;
+
+  auctions.sort((a,b)=>
+    auctionSortValue(a).localeCompare(auctionSortValue(b)) ||
+    priorityRank[normalizedPriority(a)]-priorityRank[normalizedPriority(b)] ||
+    String(a.name||"").localeCompare(String(b.name||""))
+  );
+
+  const timedAuctions=auctions
+    .filter(a=>a.endDateTime)
+    .slice()
+    .sort((a,b)=>String(a.endDateTime).localeCompare(String(b.endDateTime)));
+
+  const conflictIds=new Set();
+  const conflictWindowMs=15*60*1000;
+
+  for(let i=0;i<timedAuctions.length;i++){
+    for(let j=i+1;j<timedAuctions.length;j++){
+      if(auctionDay(timedAuctions[i])!==auctionDay(timedAuctions[j]))break;
+      const firstTime=new Date(timedAuctions[i].endDateTime).getTime();
+      const secondTime=new Date(timedAuctions[j].endDateTime).getTime();
+      if(!Number.isFinite(firstTime)||!Number.isFinite(secondTime))continue;
+      const difference=secondTime-firstTime;
+      if(difference>conflictWindowMs)break;
+      if(difference>=0){
+        conflictIds.add(timedAuctions[i].id);
+        conflictIds.add(timedAuctions[j].id);
+      }
+    }
+  }
+
+  const timedLots=lots.filter(l=>l.endDateTime).slice().sort((a,b)=>String(a.endDateTime).localeCompare(String(b.endDateTime)));
+  const lotConflictIds=new Set();
+  for(let i=0;i<timedLots.length;i++){
+    for(let j=i+1;j<timedLots.length;j++){
+      const firstTime=new Date(timedLots[i].endDateTime).getTime();
+      const secondTime=new Date(timedLots[j].endDateTime).getTime();
+      if(!Number.isFinite(firstTime)||!Number.isFinite(secondTime))continue;
+      const difference=secondTime-firstTime;
+      if(difference>15*60*1000)break;
+      if(difference>=0){lotConflictIds.add(timedLots[i].id);lotConflictIds.add(timedLots[j].id);}
+    }
+  }
+
+  const groups=new Map();
+  auctions.forEach(a=>{
+    const day=auctionDay(a);
+    if(!groups.has(day))groups.set(day,[]);
+    groups.get(day).push(a);
+  });
+
+  const groupedHtml=[...groups.entries()].map(([day,rows])=>{
+    const dayLabel=day==="Unscheduled"
+      ?"Unscheduled"
+      :new Date(`${day}T12:00:00`).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+    const highCount=rows.filter(a=>normalizedPriority(a)==="High").length;
+
+    return `<section class="auction-day-group">
+      <div class="auction-day-head">
+        <div>
+          <h3>${esc(dayLabel)}</h3>
+          <p>${rows.length} auction${rows.length===1?"":"s"}${highCount?` · ${highCount} high priority`:""}</p>
+        </div>
+      </div>
+      <div class="list">
+        ${rows.map(a=>{
+          const priority=normalizedPriority(a);
+          const timeLabel=a.endDateTime
+            ?new Date(a.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})
+            :"Time not set";
+          const auctionLots=lots.filter(l=>l.auctionId===a.id).sort((x,y)=>String(x.endDateTime||"9999-12-31T23:59").localeCompare(String(y.endDateTime||"9999-12-31T23:59")));
+          const watchedLots=auctionLots.length;
+          const previewLots=auctionLots.slice(0,3);
+          const conflict=conflictIds.has(a.id);
+          return `<div class="list-card auction-manager-card ${conflict?"auction-time-conflict":""}">
+            <div>
+              <div class="auction-card-topline">
+                <span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span>
+                <span class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.status||"Planned")}</span>
+              </div>
+              <h4>${esc(a.name)}</h4>
+              <p><strong>${esc(timeLabel)}</strong>${a.platform?` · ${esc(a.platform)}`:""}${a.location?` · ${esc(a.location)}`:""} · ${watchedLots} watched lot${watchedLots===1?"":"s"}</p>
+              ${conflict?`<div class="auction-conflict-note">⚠ Time Conflict — another tracked auction closes within 15 minutes. Use Priority to decide which needs attention first.</div>`:""}
+              ${previewLots.length?`<div class="auction-lot-preview">${previewLots.map(l=>{const lotPriority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?new Date(l.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"Time not set";const lotConflict=lotConflictIds.has(l.id);return `<div class="auction-lot-preview-row ${lotConflict?"lot-time-conflict":""}"><div><span class="auction-priority auction-priority-small priority-${lotPriority.toLowerCase()}">${esc(lotPriority)}</span><strong>${esc(l.name||"Untitled lot")}</strong><small>${esc(lotTime)}${lotConflict?" · Time Conflict":""}</small></div>${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:`<span class="auction-lot-missing">URL missing</span>`}</div>`;}).join("")}${auctionLots.length>3?`<div class="auction-lot-more">+ ${auctionLots.length-3} more watched lot${auctionLots.length-3===1?"":"s"}</div>`:""}</div>`:""}
+            </div>
+            <button class="btn secondary small" data-auction-id="${a.id}">Open</button>
+          </div>`;
+        }).join("")}
+      </div>
+    </section>`;
+  }).join("");
+
   view.innerHTML=`
-    <div class="section-head"><div><h2>Auctions & sourcing</h2><p>Watch opportunities before they become inventory.</p></div><button class="btn small" id="addAuction">＋ Auction</button></div>
-    <div class="list">${auctions.length?auctions.map(a=>`<div class="list-card"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.status||"Planned")}</div><h4>${esc(a.name)}</h4><p>${prettyDate(a.date)}${a.location?` · ${esc(a.location)}`:""} · ${lots.filter(l=>l.auctionId===a.id).length} watched lots</p></div><button class="btn secondary small" data-auction-id="${a.id}">Open</button></div>`).join(""):empty("No auctions yet.")}</div>
+    <div class="section-head">
+      <div>
+        <h2>Auctions & sourcing</h2>
+        <p>Upcoming opportunities grouped by day, closing time and priority.</p>
+      </div>
+      <button class="btn small" id="addAuction">＋ Auction</button>
+    </div>
+    <div class="auction-day-groups">${auctions.length?groupedHtml:empty("No auctions yet.")}</div>
   `;
+
   $("#addAuction").onclick=()=>openAuctionModal();
   $$("[data-auction-id]").forEach(b=>b.onclick=()=>openAuctionDetail(b.dataset.auctionId));
+  $$("[data-lot-listing]",view).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(row=>row.id===b.dataset.lotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
 }
+
 
 async function openAuctionModal(auction,seed){
   const existingAuctions=await DB.getAll("auctions");
   const platformSuggestions=[...new Set(existingAuctions.map(row=>String(row.platform||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const a=Object.assign({
     id:DB.uid("auction"),name:"",auctionMode:"Online",platform:"",date:today(),startTime:"",
-    endDateTime:"",location:"",company:"",website:"",previewDate:"",status:"Watching",
+    endDateTime:"",location:"",company:"",website:"",previewDate:"",priority:"Medium",status:"Watching",
     shippingStatus:"Watching",color:"#f7c75d",notes:""
   },seed||{},auction||{});
   openModal(`
@@ -2718,6 +3323,7 @@ async function openAuctionModal(auction,seed){
         ${field("Location","location",a.location)}
         ${field("Auction date","date",a.date,false,"date")}
         ${field("End date/time","endDateTime",a.endDateTime,false,"datetime-local")}
+        ${selectField("Priority","priority",["High","Medium","Low"],a.priority||"Medium")}
         ${field("Preview / pickup date","previewDate",a.previewDate,false,"date")}
         ${selectField("Status","status",["Watching","Bidding","Won","Lost / Did Not Win","Completed","Cancelled"],a.status)}
         ${selectField("Shipping / fulfillment","shippingStatus",SHIPPING_STATUSES,a.shippingStatus||"Watching")}
@@ -2729,20 +3335,34 @@ async function openAuctionModal(auction,seed){
   $("#auctionForm").onsubmit=async e=>{
     e.preventDefault();
     await DB.put("auctions",Object.assign({},a,Object.fromEntries(new FormData(e.currentTarget).entries())));
-    closeModal();toast("Auction saved.");renderMore();
+    closeModal();toast("Auction saved.");navigate("auctions");
   };
 }
 
 async function openAuctionDetail(id){
   const auction=await DB.getOne("auctions",id);if(!auction)return;
-  const lots=await DB.getByIndex("auctionLots","auctionId",id);
+  const allLots=await DB.getAll("auctionLots");
+  const lots=allLots.filter(l=>l.auctionId===id).sort((a,b)=>String(a.endDateTime||"9999-12-31T23:59").localeCompare(String(b.endDateTime||"9999-12-31T23:59")));
+  const timedLots=allLots.filter(l=>l.endDateTime).slice().sort((a,b)=>String(a.endDateTime).localeCompare(String(b.endDateTime)));
+  const lotConflictIds=new Set();
+  for(let i=0;i<timedLots.length;i++){
+    for(let j=i+1;j<timedLots.length;j++){
+      const firstTime=new Date(timedLots[i].endDateTime).getTime();
+      const secondTime=new Date(timedLots[j].endDateTime).getTime();
+      if(!Number.isFinite(firstTime)||!Number.isFinite(secondTime))continue;
+      const difference=secondTime-firstTime;
+      if(difference>15*60*1000)break;
+      if(difference>=0){lotConflictIds.add(timedLots[i].id);lotConflictIds.add(timedLots[j].id);}
+    }
+  }
   openModal(`
     <div class="modal-head"><div><div class="badge"><span class="dot" style="background:${safeColor(auction.color)}"></span>${esc(auction.status)}</div><h2 style="margin-top:8px">${esc(auction.name)}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <div class="modal-body">
         <p style="color:var(--muted)">${auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date)}${auction.platform?` · ${esc(auction.platform)}`:""}${auction.company?` · ${esc(auction.company)}`:""}${auction.location?` · ${esc(auction.location)}`:""}</p>
+        <div class="auction-priority priority-${String(auction.priority||"Medium").toLowerCase()}">${esc(auction.priority||"Medium")} Priority</div>
       ${auction.notes?`<div class="panel"><p>${nl2br(auction.notes)}</p></div>`:""}
       <div class="section-head"><div><h3>Watch list</h3></div><button class="btn small" id="addLot">＋ Lot</button></div>
-      <div class="list">${lots.length?lots.map(l=>`<div class="list-card"><div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${l.winningBid?` · Won ${money(l.winningBid)}`:""}</p></div><button class="btn secondary small" data-lot-id="${l.id}">Edit</button></div>`).join(""):empty("No watched lots yet.")}</div>
+        <div class="list">${lots.length?lots.map(l=>{const priority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?prettyDateTime(l.endDateTime):"Time not set";const lotConflict=lotConflictIds.has(l.id);return `<div class="list-card watch-lot-card ${lotConflict?"lot-time-conflict":""}"><div><div class="auction-card-topline"><span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span>${lotConflict?`<span class="watch-lot-conflict-label">⚠ Time Conflict</span>`:""}</div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${l.winningBid?` · Won ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:""}<button class="btn secondary small" type="button" data-lot-id="${l.id}">Edit</button></div></div>`;}).join(""):empty("No watched lots yet.")}</div>
     </div>
       <div class="modal-actions"><button class="btn danger" id="deleteAuction" type="button">Delete</button>${auction.website?`<button class="btn secondary" id="openAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn secondary" id="editAuction" type="button">Edit Auction</button><button class="btn" data-close type="button">Done</button></div>
   `);
@@ -2752,11 +3372,12 @@ async function openAuctionDetail(id){
   $("#editAuction").onclick=()=>{closeModal();openAuctionModal(auction);};
   $("#deleteAuction").onclick=async()=>{if(confirm("Delete this auction and its watch-list lots?")){for(const l of lots)await DB.remove("auctionLots",l.id);await DB.remove("auctions",id);closeModal();renderAuctionManager();}};
   $$("[data-lot-id]").forEach(b=>b.onclick=()=>openLotModal(auction,lots.find(l=>l.id===b.dataset.lotId)));
+  $$("[data-lot-listing]",modalRoot).forEach(b=>b.onclick=()=>{const lot=lots.find(row=>row.id===b.dataset.lotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
 }
 
 async function openLotModal(auction,lot){
   const l=lot||{
-    id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",currentBid:"",
+    id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",endDateTime:"",priority:"Medium",
     expectedResale:"",maxBid:"",winningBid:"",buyerPremium:"",tax:"",shippingCost:"",handlingCost:"",
     conditionAdvertised:"",notes:"",inventoryItemId:""
   };
@@ -2767,8 +3388,9 @@ async function openLotModal(auction,lot){
       <div class="form-grid">
         ${field("Item / lot name","name",l.name,true)}
         ${field("Lot / item number","lotNumber",l.lotNumber)}
-        ${field("Listing URL","listingUrl",l.listingUrl)}
-        ${field("Current bid","currentBid",l.currentBid,false,"number","0.01")}
+        ${field("Item / lot URL","listingUrl",l.listingUrl,true)}
+        ${field("Lot end date/time","endDateTime",l.endDateTime,false,"datetime-local")}
+        ${selectField("Priority","priority",["High","Medium","Low"],l.priority||"Medium")}
         ${field("Expected resale","expectedResale",l.expectedResale,false,"number","0.01")}
         ${field("Maximum bid","maxBid",l.maxBid,false,"number","0.01")}
         ${field("Winning bid","winningBid",l.winningBid,false,"number","0.01")}
@@ -2790,7 +3412,11 @@ async function openLotModal(auction,lot){
   if(openLotWebsite)openLotWebsite.onclick=()=>openExternalUrl(l.listingUrl,"lot listing");
   $("#lotForm").onsubmit=async e=>{
     e.preventDefault();
-    await DB.put("auctionLots",Object.assign({},l,Object.fromEntries(new FormData(e.currentTarget).entries())));
+    const data=Object.fromEntries(new FormData(e.currentTarget).entries());
+    data.listingUrl=String(data.listingUrl||"").trim();
+    if(!data.listingUrl){alert("Add the Item / lot URL before saving this Watch Lot.");return;}
+    if(!["High","Medium","Low"].includes(data.priority))data.priority="Medium";
+    await DB.put("auctionLots",Object.assign({},l,data));
     closeModal();openAuctionDetail(auction.id);
   };
   if(lot)$("#deleteLot").onclick=async()=>{await DB.remove("auctionLots",l.id);closeModal();openAuctionDetail(auction.id);};
@@ -2802,8 +3428,8 @@ async function openLotModal(auction,lot){
       status:"Draft / Finish Cataloging",color:auction.color||"#f7c75d",storageLocation:"",
       purchaseDate:auction.date||today(),sourceType:auction.auctionMode==="In Person"?"In-Person Auction":"Online Auction",
       sourcePlatform:auction.platform||"",purchaseSource:auction.name,sourceSeller:auction.company||"",
-      sourceLocation:auction.location||"",listingTitle:l.name,listingUrl:l.listingUrl||auction.website||"",
-      lotNumber:l.lotNumber||"",auctionEndDateTime:auction.endDateTime||"",auctionId:auction.id,
+      sourceLocation:auction.location||"",listingTitle:l.name,listingUrl:l.listingUrl||"",
+      lotNumber:l.lotNumber||"",auctionEndDateTime:l.endDateTime||auction.endDateTime||"",auctionId:auction.id,
       shippingStatus:auction.shippingStatus||"Won - Awaiting Payment",
       purchasePrice:l.winningBid,buyerPremium:l.buyerPremium,tax:"",salesTax:l.tax,
       shippingCost:l.shippingCost,handlingCost:l.handlingCost,otherAcquisitionCosts:"",
@@ -2833,7 +3459,7 @@ function openQuickActionSheet(){
         <button class="action-sheet-btn" id="qaExpense"><span>💵</span><div><strong>Expense</strong><small>Fuel, parts, booth fees, shipping and more</small></div></button>
         <button class="action-sheet-btn" id="qaEvent"><span>📅</span><div><strong>Event</strong><small>Fair, festival, pickup or appointment</small></div></button>
 <button class="action-sheet-btn" id="qaSale"><span>🧾</span><div><strong>Record Sale</strong><small>Find by SKU, barcode or serial and mark sold</small></div></button>
-        <button class="action-sheet-btn" id="qaAuction"><span>🌐</span><div><strong>Online Auction</strong><small>Track an online or in-person auction</small></div></button>
+        <button class="action-sheet-btn" id="qaAuction"><span>🌐</span><div><strong>Auction</strong><small>Track an online or in-person auction</small></div></button>
       </div>
     </div>
   `);
@@ -3091,6 +3717,19 @@ function saleProfit(s){
   return saleNetProceeds(s)-num(s.costBasis);
 }
 function stat(label,value,sub="",cls=""){return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div>${sub?`<div class="stat-sub">${sub}</div>`:""}</div>`;}
+function snapshotStat(label,value,sub="",cls="",action=""){return `<button class="stat snapshot-stat" data-snapshot="${esc(action)}" type="button"><div class="stat-label">${esc(label)}</div><div class="stat-value ${cls}">${value}</div>${sub?`<div class="stat-sub">${esc(sub)}</div>`:""}<div class="snapshot-stat-hint">View details →</div></button>`;}
+function openSnapshotBreakdown(title,description,items,valueFn,total){
+  openModal(`
+    <div class="modal-head"><div><div class="eyebrow">BUSINESS SNAPSHOT</div><h2>${esc(title)}</h2></div><button class="close-btn" data-close type="button">×</button></div>
+    <div class="modal-body">
+      <div class="snapshot-breakdown-total"><span>Total</span><strong>${money(total)}</strong></div>
+      <p class="snapshot-breakdown-copy">${esc(description)}</p>
+      <div class="list">${items.length?items.map(item=>`<button class="list-card clickable-list-card snapshot-breakdown-row" data-snapshot-item="${esc(item.id)}" type="button"><div><h4>${esc(item.name||"Untitled Item")}</h4><p>${esc(item.sku||"No SKU")}${item.status?` · ${esc(item.status)}`:""}</p></div><strong>${money(valueFn(item))}</strong></button>`).join(""):empty("No matching inventory items.")}</div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close type="button">Done</button></div>
+  `);
+  $$("[data-snapshot-item]").forEach(row=>row.onclick=()=>{const id=row.dataset.snapshotItem;closeModal();openItemDetail(id);});
+}
 function quick(icon,label,route){return `<button class="quick-card" data-jump="${route}"><span class="quick-icon">${icon}</span><strong>${label}</strong></button>`;}
 function empty(text){return `<div class="empty">${esc(text)}</div>`;}
 function kv(k,v){return `<p><strong>${esc(k)}:</strong> ${esc(v||"—")}</p>`;}
@@ -3135,7 +3774,7 @@ function openGoogleCalendarEvent(event){
   window.open(`https://calendar.google.com/calendar/render?${params.toString()}`,"_blank","noopener");
 }
 function eventListItem(e){return `<div class="list-card" data-event-id="${e.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(e.color)}"></span>${esc(e.type||"Event")}</div><h4>${esc(e.title)}</h4><p>${prettyDateTime(e.startDate)}${e.location?` · ${esc(e.location)}`:""}</p></div></div>`;}
-function auctionListItem(a){const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);return `<div class="list-card clickable-list-card" data-auction-detail-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""}</p></div></div>`;}
+function auctionListItem(a){const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);return `<div class="list-card clickable-list-card" data-auction-detail-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""} · ${esc(a.priority||"Medium")} priority</p></div></div>`;}
 async function findInventoryByScannedCode(value){
   const code=String(value||"").trim();
   if(!code)return null;
