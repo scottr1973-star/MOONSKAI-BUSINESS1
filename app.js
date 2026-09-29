@@ -264,25 +264,17 @@ const profit=revenue-soldCost-saleCostsTotal-expensesTotal;
   }).sort((a,b)=>String(a.endDateTime||a.date).localeCompare(String(b.endDateTime||b.date))).slice(0,4);
 
   view.innerHTML=`
-    <section class="capture-hero">
-      <div class="capture-copy">
-        <div class="hero-label">PAPER REPLACEMENT FOR A MOBILE BUSINESS</div>
-        <h2>See it. Photograph it. Catalog it.</h2>
-        <p>Start an inventory record the moment you find something worth buying. Add the source, real landed cost, condition, work needed and notes before the details disappear.</p>
-      </div>
-      <div class="capture-actions">
-        <button class="capture-primary" id="homeCamera">
-          <span class="capture-big-icon">📷</span>
-          <span><strong>Capture Item</strong><small>Camera → catalog immediately</small></span>
-        </button>
-        <button class="capture-secondary" id="homeGallery">
-          <span>🖼</span><strong>Use Existing Photos</strong>
-        </button>
-        <button class="capture-secondary" id="homeManual">
-          <span>＋</span><strong>Add Manually</strong>
-        </button>
-      </div>
-    </section>
+      <section class="dashboard-capture-bar">
+        <div class="dashboard-capture-copy">
+          <strong>Quick capture</strong>
+          <small>Start an inventory item from a photo or add it manually.</small>
+        </div>
+        <div class="dashboard-capture-actions">
+          <button class="btn small" id="homeCamera" type="button">📷 Capture</button>
+          <button class="btn secondary small" id="homeGallery" type="button">🖼 Photos</button>
+          <button class="btn ghost small" id="homeManual" type="button">＋ Manual</button>
+        </div>
+      </section>
 
     <div class="section-head"><div><h2>Needs attention</h2><p>The app remembers what still needs to be finished.</p></div></div>
     <section class="attention-grid">
@@ -319,6 +311,8 @@ ${attentionCard("Needs Photos",needsPhotos,"No item photo stored","📷","Needs 
   $("#homeGallery").onclick=()=>$("#globalGalleryInput").click();
   $("#homeManual").onclick=()=>openItemModal();
 $$("[data-jump]").forEach(b=>b.onclick=()=>{if(b.dataset.attention)state.inventoryAttention=b.dataset.attention;navigate(b.dataset.jump);});
+  $$("[data-event-id]").forEach(el=>el.onclick=()=>openEventModal(events.find(e=>e.id===el.dataset.eventId)));
+  $$("[data-auction-detail-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.auctionDetailId));
 }
 
 async function renderInventory(){
@@ -754,11 +748,11 @@ if(item.status!=="Sold"){
 }
 
 async function renderCalendar(){
-  const events=await DB.getAll("events");
+  const [events,auctions]=await Promise.all([DB.getAll("events"),DB.getAll("auctions")]);
   const d=state.calendarDate,year=d.getFullYear(),month=d.getMonth();
   const first=new Date(year,month,1),start=new Date(year,month,1-first.getDay());
   const days=Array.from({length:42},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
-  const upcoming=events.filter(e=>new Date(e.startDate)>=startOfToday()).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate)).slice(0,8);
+  const upcoming=[...events.map(event=>({kind:"event",when:event.startDate,record:event})),...auctions.map(auction=>({kind:"auction",when:auction.endDateTime||auction.date,record:auction}))].filter(entry=>String(entry.when||"").slice(0,10)>=today()).sort((a,b)=>String(a.when).localeCompare(String(b.when))).slice(0,8);
 
   view.innerHTML=`
     <div class="section-head"><div><h2>Calendar</h2><p>Keep fairs, festivals, pickups, auctions and appointments together.</p></div><button class="btn small" id="addEventTop">＋ Event</button></div>
@@ -767,22 +761,34 @@ async function renderCalendar(){
         <div class="cal-head"><button class="btn ghost small" id="prevMonth">←</button><strong>${first.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</strong><button class="btn ghost small" id="nextMonth">→</button></div>
         <div class="cal-grid">
           ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>`<div class="cal-dow">${x}</div>`).join("")}
-          ${days.map(day=>calendarDay(day,month,events)).join("")}
+          ${days.map(day=>calendarDay(day,month,events,auctions)).join("")}
         </div>
       </div>
-      <div class="panel"><h3>Upcoming</h3><div class="list">${upcoming.length?upcoming.map(eventListItem).join(""):empty("No upcoming events yet.")}</div></div>
+      <div class="panel"><h3>Upcoming</h3><div class="list">${upcoming.length?upcoming.map(entry=>entry.kind==="auction"?calendarAuctionListItem(entry.record):eventListItem(entry.record)).join(""):empty("No upcoming events or auctions yet.")}</div></div>
     </section>
   `;
   $("#addEventTop").onclick=()=>openEventModal();
   $("#prevMonth").onclick=()=>{state.calendarDate=new Date(year,month-1,1);renderCalendar();};
   $("#nextMonth").onclick=()=>{state.calendarDate=new Date(year,month+1,1);renderCalendar();};
   $$("[data-event-id]").forEach(el=>el.onclick=()=>openEventModal(events.find(e=>e.id===el.dataset.eventId)));
+  $$("[data-calendar-auction-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.calendarAuctionId));
 }
 
-function calendarDay(day,currentMonth,events){
-  const key=ymd(day),dayEvents=events.filter(e=>String(e.startDate||"").slice(0,10)===key);
+function calendarAuctionListItem(a){
+  const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);
+  return `<div class="list-card" data-calendar-auction-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""}</p></div></div>`;
+}
+
+function calendarDay(day,currentMonth,events,auctions){
+  const key=ymd(day);
+  const dayEvents=events.filter(e=>String(e.startDate||"").slice(0,10)===key);
+  const dayAuctions=auctions.filter(a=>String(a.endDateTime||a.date||"").slice(0,10)===key);
+  const markers=[
+    ...dayEvents.map(e=>`<button class="cal-event" title="${esc(e.title)}" data-event-id="${e.id}" style="background:${safeColor(e.color)}"></button>`),
+    ...dayAuctions.map(a=>`<button class="cal-event" title="Auction: ${esc(a.name)}" data-calendar-auction-id="${a.id}" style="background:${safeColor(a.color||"#f7c75d")}"></button>`)
+  ];
   let cls="cal-day";if(day.getMonth()!==currentMonth)cls+=" muted";if(key===today())cls+=" today";
-  return `<div class="${cls}"><div class="cal-num">${day.getDate()}</div><div class="cal-events">${dayEvents.slice(0,5).map(e=>`<button class="cal-event" title="${esc(e.title)}" data-event-id="${e.id}" style="background:${safeColor(e.color)}"></button>`).join("")}</div></div>`;
+  return `<div class="${cls}"><div class="cal-num">${day.getDate()}</div><div class="cal-events">${markers.slice(0,5).join("")}</div></div>`;
 }
 
 async function openEventModal(event){
@@ -804,18 +810,39 @@ async function openEventModal(event){
       ${field("Expected miles","expectedMiles",e.expectedMiles,false,"number","0.1")}
       <div class="field"><label>Color</label><input class="input" style="padding:5px" type="color" name="color" value="${safeColor(e.color)}"></div>
       ${textareaField("Notes","notes",e.notes)}
-</div></div><div class="modal-actions">${edit?`<button class="btn danger" id="deleteEvent" type="button">Delete</button>`:""}<button class="btn secondary" id="googleCalendarBtn" type="button">Add to Google Calendar</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Event</button></div></form>
+  </div></div><div class="modal-actions">${edit?`<button class="btn danger" id="deleteEvent" type="button">Delete</button>`:""}${edit&&e.website?`<button class="btn secondary" id="openEventWebsite" type="button">Open Website</button>`:""}<button class="btn secondary" id="googleCalendarBtn" type="button">Add to Google Calendar</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Event</button></div></form>
   `);
+  const openEventWebsite=$("#openEventWebsite");
+  if(openEventWebsite)openEventWebsite.onclick=()=>openExternalUrl(e.website,"event website");
 $("#googleCalendarBtn").onclick=()=>{
   const data=Object.fromEntries(new FormData($("#eventForm")).entries());
   openGoogleCalendarEvent(Object.assign({},e,data));
 };
-  $("#eventForm").onsubmit=async x=>{x.preventDefault();await DB.put("events",Object.assign({},e,Object.fromEntries(new FormData(x.currentTarget).entries())));closeModal();toast("Event saved.");renderCalendar();};
+  const eventTypeSelect=$("#eventForm").elements.type;
+  const openAuctionFromEventDraft=()=>{
+    const data=Object.fromEntries(new FormData($("#eventForm")).entries());
+    const startDate=String(data.startDate||"");
+    closeModal();
+    openAuctionModal(null,{
+      name:data.title||"",
+      date:startDate.slice(0,10)||today(),
+      endDateTime:data.endDate||"",
+      location:data.location||"",
+      website:data.website||"",
+      color:data.color||"#f7c75d",
+      notes:data.notes||""
+    });
+  };
+  eventTypeSelect.onchange=()=>{
+    if(eventTypeSelect.value==="Auction")openAuctionFromEventDraft();
+  };
+
+  $("#eventForm").onsubmit=async x=>{x.preventDefault();const data=Object.fromEntries(new FormData(x.currentTarget).entries());if(data.type==="Auction"){openAuctionFromEventDraft();return;}await DB.put("events",Object.assign({},e,data));closeModal();toast("Event saved.");renderCalendar();};
   if(edit)$("#deleteEvent").onclick=async()=>{if(confirm("Delete this event?")){await DB.remove("events",e.id);closeModal();renderCalendar();}};
 }
 
 async function renderMoney(){
-const [expenses,mileage,sales,items,transactions]=await Promise.all([DB.getAll("expenses"),DB.getAll("mileage"),DB.getAll("sales"),DB.getAll("items"),DB.getAll("transactions")]);
+const [expenses,mileage,sales,items,transactions,attachments]=await Promise.all([DB.getAll("expenses"),DB.getAll("mileage"),DB.getAll("sales"),DB.getAll("items"),DB.getAll("transactions"),DB.getAll("attachments")]);
 const activeSales=sales.filter(s=>s.status!=="Voided");
 const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e=>num(e.amount))),miles=sum(mileage.map(m=>num(m.miles))),revenue=sum(activeSales.map(s=>num(s.soldPrice)+num(s.shippingCharged))),cost=sum(activeSales.map(s=>num(s.costBasis))),saleCostsTotal=sum(activeSales.map(s=>saleCosts(s))),profit=revenue-cost-saleCostsTotal-expTotal;
   view.innerHTML=`
@@ -829,7 +856,379 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
 
   if(state.moneyTab==="expenses"){
     expenses.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    $("#moneyContent").innerHTML=`<div class="section-head"><div><h3>Expenses</h3></div></div>${table(["Date","Category","Vendor","Description","Amount",""],expenses.map(e=>[prettyDate(e.date),esc(e.category),esc(e.vendor||""),esc(e.description||""),money(e.amount),`<button class="btn secondary small" data-expense-id="${e.id}">Edit</button>`]))}`;
+    const expenseReportHeaderSetting=await DB.getOne("settings","expenseReportHeader");
+    const savedExpenseReportHeader=String(expenseReportHeaderSetting?.value||"");
+
+    const receiptCounts=new Map();
+    attachments.filter(a=>a.ownerType==="expense").forEach(a=>{
+      receiptCounts.set(a.ownerId,(receiptCounts.get(a.ownerId)||0)+1);
+    });
+
+    const categoryOptions=EXPENSE_CATEGORIES.map(category=>`
+      <label class="expense-category-option">
+        <input type="checkbox" data-expense-category="${esc(category)}">
+        <span>${esc(category)}</span>
+      </label>`).join("");
+
+    const expenseRows=expenses.map(e=>{
+      const receiptCount=receiptCounts.get(e.id)||0;
+      return [
+        prettyDate(e.date),
+        esc(e.category),
+        esc(e.vendor||""),
+        esc(e.description||""),
+        money(e.amount),
+        receiptCount?`🧾 ${receiptCount}`:"—",
+        `<button class="btn secondary small" data-expense-id="${e.id}">Edit</button>`
+      ];
+    });
+
+    $("#moneyContent").innerHTML=`
+      <div class="section-head"><div><h3>Expenses</h3></div></div>
+
+      <div class="panel expense-calculator" id="expenseCalculator">
+        <div class="section-head">
+          <div>
+            <h3>Expense Calculator</h3>
+            <p>Check exactly the categories you want to total, then choose the time period.</p>
+              <div class="field expense-report-header-field">
+                <label>Report Header</label>
+                <input class="input" id="expenseReportHeader" type="text" value="${esc(savedExpenseReportHeader)}" placeholder="Example: Moonstone Music">
+              </div>
+          </div>
+          <div class="expense-calc-actions">
+            <button class="btn secondary small" id="expenseSelectAll" type="button">Select All</button>
+            <button class="btn ghost small" id="expenseClearAll" type="button">Clear</button>
+            <button class="btn secondary small" id="expenseExportReport" type="button">Export Report CSV</button>
+            <button class="btn secondary small" id="expensePrintReport" type="button">Print / Save PDF</button>
+          </div>
+        </div>
+
+        <div class="expense-category-grid">${categoryOptions}</div>
+
+        <div class="expense-calc-controls">
+          <div class="field">
+            <label>Time period</label>
+            <select class="input" id="expenseDateMode">
+              <option value="all">All Time</option>
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+
+          <div class="field expense-date-control" id="expenseDayControl" hidden>
+            <label>Day</label>
+            <input class="input" id="expenseDay" type="date" value="${today()}">
+          </div>
+
+          <div class="field expense-date-control" id="expenseWeekControl" hidden>
+            <label>Week</label>
+            <input class="input" id="expenseWeek" type="week">
+          </div>
+
+          <div class="field expense-date-control" id="expenseMonthControl" hidden>
+            <label>Month</label>
+            <input class="input" id="expenseMonth" type="month" value="${today().slice(0,7)}">
+          </div>
+
+          <div class="expense-custom-range expense-date-control" id="expenseCustomControl" hidden>
+            <div class="field">
+              <label>From</label>
+              <input class="input" id="expenseFrom" type="date">
+            </div>
+            <div class="field">
+              <label>Through</label>
+              <input class="input" id="expenseTo" type="date">
+            </div>
+          </div>
+        </div>
+
+        <div class="expense-calc-result">
+          <div>
+            <span class="expense-calc-label">Matching Expenses</span>
+            <strong id="expenseMatchCount">0</strong>
+          </div>
+          <div>
+            <span class="expense-calc-label">Selected Total</span>
+            <strong id="expenseSelectedTotal">${money(0)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-head expense-records-head"><div><h3>Expense Records</h3></div></div>
+      ${table(["Date","Category","Vendor","Description","Amount","Receipts",""],expenseRows)}
+    `;
+
+    const calculator=$("#expenseCalculator");
+    const reportHeaderInput=$("#expenseReportHeader");
+    const categoryChecks=$$("[data-expense-category]",calculator);
+    const dateMode=$("#expenseDateMode");
+    let currentExpenseMatches=[];
+
+    reportHeaderInput.onchange=async()=>{
+      await DB.put("settings",{
+        key:"expenseReportHeader",
+        value:String(reportHeaderInput.value||"").trim(),
+        updatedAt:new Date().toISOString()
+      });
+    };
+
+    const weekBounds=value=>{
+      const match=String(value||"").match(/^(\d{4})-W(\d{2})$/);
+      if(!match)return null;
+      const year=Number(match[1]);
+      const week=Number(match[2]);
+      const jan4=new Date(year,0,4);
+      const jan4Day=jan4.getDay()||7;
+      const monday=new Date(year,0,4-jan4Day+1+(week-1)*7);
+      const sunday=new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+6);
+      return [ymd(monday),ymd(sunday)];
+    };
+
+    const expenseDateMatches=(expenseDate,mode)=>{
+      const value=String(expenseDate||"").slice(0,10);
+      if(!value)return false;
+      if(mode==="all")return true;
+      if(mode==="day")return value===$("#expenseDay").value;
+      if(mode==="month"){
+        const month=$("#expenseMonth").value;
+        return !!month && value.slice(0,7)===month;
+      }
+      if(mode==="week"){
+        const bounds=weekBounds($("#expenseWeek").value);
+        return !!bounds && value>=bounds[0] && value<=bounds[1];
+      }
+      if(mode==="custom"){
+        const from=$("#expenseFrom").value;
+        const to=$("#expenseTo").value;
+        if(from && value<from)return false;
+        if(to && value>to)return false;
+        return !!(from||to);
+      }
+      return false;
+    };
+
+    const updateExpenseDateControls=()=>{
+      $$(".expense-date-control",calculator).forEach(el=>el.hidden=true);
+      if(dateMode.value==="day")$("#expenseDayControl").hidden=false;
+      if(dateMode.value==="week")$("#expenseWeekControl").hidden=false;
+      if(dateMode.value==="month")$("#expenseMonthControl").hidden=false;
+      if(dateMode.value==="custom")$("#expenseCustomControl").hidden=false;
+    };
+
+    const updateExpenseCalculator=()=>{
+      const selected=new Set(categoryChecks.filter(input=>input.checked).map(input=>input.dataset.expenseCategory));
+      currentExpenseMatches=expenses.filter(e=>selected.has(String(e.category||"")) && expenseDateMatches(e.date,dateMode.value));
+      $("#expenseMatchCount").textContent=String(currentExpenseMatches.length);
+      $("#expenseSelectedTotal").textContent=money(sum(currentExpenseMatches.map(e=>num(e.amount))));
+    };
+
+    const expenseReportPeriodLabel=()=>{
+      const mode=dateMode.value;
+      if(mode==="all")return "All Time";
+      if(mode==="day"){
+        const day=$("#expenseDay").value;
+        return day?prettyDate(day):"Day not selected";
+      }
+      if(mode==="week"){
+        const bounds=weekBounds($("#expenseWeek").value);
+        return bounds?`${prettyDate(bounds[0])} through ${prettyDate(bounds[1])}`:"Week not selected";
+      }
+      if(mode==="month"){
+        const month=$("#expenseMonth").value;
+        if(!month)return "Month not selected";
+        return new Date(`${month}-01T12:00:00`).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+      }
+      if(mode==="custom"){
+        const from=$("#expenseFrom").value;
+        const to=$("#expenseTo").value;
+        if(from&&to)return `${prettyDate(from)} through ${prettyDate(to)}`;
+        if(from)return `From ${prettyDate(from)}`;
+        if(to)return `Through ${prettyDate(to)}`;
+        return "Custom range not selected";
+      }
+      return "All Time";
+    };
+
+    const buildExpenseReport=()=>{
+      const categories=categoryChecks
+        .filter(input=>input.checked)
+        .map(input=>input.dataset.expenseCategory);
+      const rows=currentExpenseMatches
+        .slice()
+        .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+      return {
+        header:String(reportHeaderInput.value||"").trim(),
+        categories,
+        period:expenseReportPeriodLabel(),
+        rows,
+        total:sum(rows.map(e=>num(e.amount)))
+      };
+    };
+
+    $("#expenseExportReport").onclick=()=>{
+      const report=buildExpenseReport();
+      if(!report.categories.length){
+        alert("Select at least one expense category.");
+        return;
+      }
+      if(!report.rows.length){
+        alert("There are no matching expenses to export.");
+        return;
+      }
+
+      const headers=["Date","Category","Vendor","Description","Amount","Receipts","Payment Method","Notes"];
+      const rows=report.rows.map(e=>[
+        e.date||"",
+        e.category||"",
+        e.vendor||"",
+        e.description||"",
+        num(e.amount),
+        receiptCounts.get(e.id)||0,
+        e.paymentMethod||"",
+        e.notes||""
+      ]);
+
+      const csv=[
+        headers,
+        ...rows,
+        ["","","","Grand Total",report.total.toFixed(2),"","",""]
+      ].map(row=>row.map(csvCell).join(",")).join("\n");
+
+      downloadFile(`expense-report-${today()}.csv`,csv,"text/csv");
+      toast("Expense report CSV exported.");
+    };
+
+    $("#expensePrintReport").onclick=()=>{
+      const report=buildExpenseReport();
+      if(!report.categories.length){
+        alert("Select at least one expense category.");
+        return;
+      }
+      if(!report.rows.length){
+        alert("There are no matching expenses to print.");
+        return;
+      }
+
+      const w=window.open("","_blank","width=1000,height=800");
+      if(!w){
+        alert("Allow pop-ups to print or save the expense report.");
+        return;
+      }
+
+      const rowsHtml=report.rows.map(e=>`
+        <tr>
+          <td>${esc(prettyDate(e.date))}</td>
+          <td>${esc(e.category||"")}</td>
+          <td>${esc(e.vendor||"")}</td>
+          <td>${esc(e.description||"")}</td>
+          <td class="money">${esc(money(e.amount))}</td>
+          <td>${receiptCounts.get(e.id)||0}</td>
+          <td>${esc(e.paymentMethod||"")}</td>
+          <td>${esc(e.notes||"")}</td>
+        </tr>`).join("");
+
+      w.document.write(`
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Expense Report - ${esc(today())}</title>
+          <style>
+            *{box-sizing:border-box}
+            body{font-family:Arial,sans-serif;color:#111;background:#fff;margin:0;padding:28px}
+            h1{font-size:24px;margin:0 0 4px}
+            h2{font-size:16px;margin:0 0 22px;font-weight:500;color:#444}
+            .summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 22px}
+            .summary div{border:1px solid #bbb;border-radius:8px;padding:10px 12px}
+            .summary span{display:block;font-size:11px;text-transform:uppercase;color:#666;margin-bottom:4px}
+            .summary strong{font-size:16px}
+            table{width:100%;border-collapse:collapse;font-size:12px}
+            th,td{border:1px solid #bbb;padding:7px;text-align:left;vertical-align:top}
+            th{background:#eee}
+            td.money{text-align:right;white-space:nowrap}
+            tfoot td{font-weight:700;background:#f5f5f5}
+            .generated{margin-top:14px;font-size:10px;color:#666}
+            @media print{
+              body{padding:0}
+              .summary div{break-inside:avoid}
+              table{font-size:10px}
+              thead{display:table-header-group}
+              tr{break-inside:avoid}
+            }
+          </style>
+        </head>
+        <body>
+          ${report.header?`<h1>${esc(report.header)}</h1>`:""}
+          <h2>Expense Report</h2>
+
+          <div class="summary">
+            <div><span>Period</span><strong>${esc(report.period)}</strong></div>
+            <div><span>Categories</span><strong>${esc(report.categories.join(", "))}</strong></div>
+            <div><span>Matching Expenses</span><strong>${report.rows.length}</strong></div>
+            <div><span>Grand Total</span><strong>${esc(money(report.total))}</strong></div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Vendor</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Receipts</th>
+                <th>Payment Method</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4">Grand Total</td>
+                <td class="money">${esc(money(report.total))}</td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="generated">Generated ${esc(new Date().toLocaleString())}</div>
+        </body>
+        </html>
+      `);
+
+      w.document.close();
+      w.focus();
+      setTimeout(()=>w.print(),250);
+    };
+
+    $("#expenseSelectAll").onclick=()=>{
+      categoryChecks.forEach(input=>input.checked=true);
+      updateExpenseCalculator();
+    };
+
+    $("#expenseClearAll").onclick=()=>{
+      categoryChecks.forEach(input=>input.checked=false);
+      updateExpenseCalculator();
+    };
+
+    categoryChecks.forEach(input=>input.onchange=updateExpenseCalculator);
+
+    dateMode.onchange=()=>{
+      updateExpenseDateControls();
+      updateExpenseCalculator();
+    };
+
+    ["expenseDay","expenseWeek","expenseMonth","expenseFrom","expenseTo"].forEach(id=>{
+      const input=$("#"+id);
+      if(input)input.onchange=updateExpenseCalculator;
+    });
+
+    updateExpenseDateControls();
+    updateExpenseCalculator();
+
     $$("[data-expense-id]").forEach(b=>b.onclick=()=>openExpenseModal(expenses.find(e=>e.id===b.dataset.expenseId)));
 }else if(state.moneyTab==="mileage"){
   mileage.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
@@ -943,7 +1342,7 @@ async function openExpenseModal(exp,receiptSeed){
       if(!strip)return;
 
       strip.innerHTML=stagedReceipts.length
-        ? stagedReceipts.map((receipt,index)=>`<div class="photo-thumb" data-receipt-index="${index}"><img alt="Receipt preview"><button type="button" data-remove-receipt="${index}" aria-label="Remove receipt">×</button></div>`).join("")
+        ? stagedReceipts.map((receipt,index)=>`<div class="photo-thumb" data-receipt-index="${index}"><img alt="Receipt preview" data-view-receipt="${index}" title="View receipt"><button type="button" data-remove-receipt="${index}" aria-label="Remove receipt">×</button></div>`).join("")
         : `<div class="muted">No receipts attached yet.</div>`;
 
       stagedReceipts.forEach((receipt,index)=>{
@@ -962,6 +1361,46 @@ async function openExpenseModal(exp,receiptSeed){
           renderReceiptPreview();
         };
       });
+
+    $$("[data-view-receipt]",strip).forEach(image=>{
+      image.onclick=()=>{
+        const receipt=stagedReceipts[Number(image.dataset.viewReceipt)];
+        if(!receipt||!receipt.blob)return;
+
+        const url=URL.createObjectURL(receipt.blob);
+        const viewer=document.createElement("div");
+        viewer.className="receipt-viewer";
+
+        const panel=document.createElement("div");
+        panel.className="receipt-viewer-panel";
+
+        const closeButton=document.createElement("button");
+        closeButton.type="button";
+        closeButton.className="receipt-viewer-close";
+        closeButton.setAttribute("aria-label","Close receipt viewer");
+        closeButton.textContent="×";
+
+        const fullImage=document.createElement("img");
+        fullImage.src=url;
+        fullImage.alt="Receipt";
+
+        const closeViewer=()=>{
+          URL.revokeObjectURL(url);
+          viewer.remove();
+        };
+
+        closeButton.onclick=closeViewer;
+        viewer.onclick=event=>{
+          if(event.target===viewer)closeViewer();
+        };
+
+        panel.appendChild(closeButton);
+        panel.appendChild(fullImage);
+        viewer.appendChild(panel);
+        modalRoot.appendChild(viewer);
+      };
+    });
+
     };
 
     const stageReceiptFiles=async files=>{
@@ -1766,7 +2205,7 @@ async function renderUserGuide(){
 async function renderMore(){
   const auctions=(await DB.getAll("auctions")).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   view.innerHTML=`
-    <div class="section-head"><div><h2>More</h2><p>Auctions, backups and data tools.</p></div><button class="btn small" id="addAuctionTop">＋ Auction</button></div>
+    <div class="section-head"><div><h2>More</h2><p>Auctions, backups and data tools.</p></div></div>
     <section class="grid-2">
       <div class="panel">
         <h3>Online Auctions & Sourcing</h3>
@@ -1809,8 +2248,8 @@ async function renderMore(){
   </div>
     </section>
   `;
-  $("#addAuctionTop").onclick=()=>openAuctionModal();
   $("#manageAuctions").onclick=()=>renderAuctionManager();
+  $$("[data-auction-detail-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.auctionDetailId));
   $("#exportBackup").onclick=exportBackup;
   $("#importBackup").onchange=importBackupFile;
   $$("[data-csv]").forEach(b=>b.onclick=()=>exportCSV(b.dataset.csv));
@@ -2258,20 +2697,22 @@ async function renderAuctionManager(){
   $$("[data-auction-id]").forEach(b=>b.onclick=()=>openAuctionDetail(b.dataset.auctionId));
 }
 
-async function openAuctionModal(auction){
-  const a=auction||{
-    id:DB.uid("auction"),name:"",auctionMode:"Online",platform:"ShopGoodwill",date:today(),startTime:"",
+async function openAuctionModal(auction,seed){
+  const existingAuctions=await DB.getAll("auctions");
+  const platformSuggestions=[...new Set(existingAuctions.map(row=>String(row.platform||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const a=Object.assign({
+    id:DB.uid("auction"),name:"",auctionMode:"Online",platform:"",date:today(),startTime:"",
     endDateTime:"",location:"",company:"",website:"",previewDate:"",status:"Watching",
     shippingStatus:"Watching",color:"#f7c75d",notes:""
-  };
+  },seed||{},auction||{});
   openModal(`
     <div class="modal-head"><div><div class="eyebrow">SOURCING</div><h2>${auction?"Edit Auction":"Track Auction"}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <form id="auctionForm"><div class="modal-body">
-      <div class="record-section"><div class="record-section-title"><span>🌐</span><div><strong>Auction</strong><small>Designed for ShopGoodwill and other online auction sources.</small></div></div>
+      <div class="record-section"><div class="record-section-title"><span>🌐</span><div><strong>Auction</strong><small>Track any online or in-person auction source.</small></div></div>
       <div class="form-grid">
         ${field("Auction / saved search name","name",a.name,true)}
         ${selectField("Auction type","auctionMode",["Online","In Person"],a.auctionMode||"Online")}
-        ${selectField("Platform","platform",ONLINE_PLATFORMS,a.platform||"ShopGoodwill")}
+        <div class="field"><label>Platform / auction site</label><input class="input" name="platform" value="${esc(a.platform||"")}" list="auctionPlatformSuggestions" autocomplete="off" placeholder="Example: ShopGoodwill"><datalist id="auctionPlatformSuggestions">${platformSuggestions.map(name=>`<option value="${esc(name)}"></option>`).join("")}</datalist></div>
         ${field("Auction company / seller","company",a.company)}
         ${field("Listing / auction URL","website",a.website)}
         ${field("Location","location",a.location)}
@@ -2298,14 +2739,16 @@ async function openAuctionDetail(id){
   openModal(`
     <div class="modal-head"><div><div class="badge"><span class="dot" style="background:${safeColor(auction.color)}"></span>${esc(auction.status)}</div><h2 style="margin-top:8px">${esc(auction.name)}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <div class="modal-body">
-      <p style="color:var(--muted)">${prettyDate(auction.date)}${auction.location?` · ${esc(auction.location)}`:""}</p>
+        <p style="color:var(--muted)">${auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date)}${auction.platform?` · ${esc(auction.platform)}`:""}${auction.company?` · ${esc(auction.company)}`:""}${auction.location?` · ${esc(auction.location)}`:""}</p>
       ${auction.notes?`<div class="panel"><p>${nl2br(auction.notes)}</p></div>`:""}
       <div class="section-head"><div><h3>Watch list</h3></div><button class="btn small" id="addLot">＋ Lot</button></div>
       <div class="list">${lots.length?lots.map(l=>`<div class="list-card"><div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${l.winningBid?` · Won ${money(l.winningBid)}`:""}</p></div><button class="btn secondary small" data-lot-id="${l.id}">Edit</button></div>`).join(""):empty("No watched lots yet.")}</div>
     </div>
-    <div class="modal-actions"><button class="btn danger" id="deleteAuction" type="button">Delete</button><button class="btn secondary" id="editAuction" type="button">Edit Auction</button><button class="btn" data-close type="button">Done</button></div>
+      <div class="modal-actions"><button class="btn danger" id="deleteAuction" type="button">Delete</button>${auction.website?`<button class="btn secondary" id="openAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn secondary" id="editAuction" type="button">Edit Auction</button><button class="btn" data-close type="button">Done</button></div>
   `);
   $("#addLot").onclick=()=>openLotModal(auction);
+  const openAuctionWebsite=$("#openAuctionWebsite");
+  if(openAuctionWebsite)openAuctionWebsite.onclick=()=>openExternalUrl(auction.website,"auction page");
   $("#editAuction").onclick=()=>{closeModal();openAuctionModal(auction);};
   $("#deleteAuction").onclick=async()=>{if(confirm("Delete this auction and its watch-list lots?")){for(const l of lots)await DB.remove("auctionLots",l.id);await DB.remove("auctions",id);closeModal();renderAuctionManager();}};
   $$("[data-lot-id]").forEach(b=>b.onclick=()=>openLotModal(auction,lots.find(l=>l.id===b.dataset.lotId)));
@@ -2339,9 +2782,12 @@ async function openLotModal(auction,lot){
       <div class="modal-actions">
         ${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}
         ${lot&&num(l.winningBid)>0&&!l.inventoryItemId?`<button class="btn secondary" id="lotToInventory" type="button">Catalog Winning Item</button>`:""}
+        ${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}
         <button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button>
       </div></form>
   `);
+  const openLotWebsite=$("#openLotWebsite");
+  if(openLotWebsite)openLotWebsite.onclick=()=>openExternalUrl(l.listingUrl,"lot listing");
   $("#lotForm").onsubmit=async e=>{
     e.preventDefault();
     await DB.put("auctionLots",Object.assign({},l,Object.fromEntries(new FormData(e.currentTarget).entries())));
@@ -2387,7 +2833,7 @@ function openQuickActionSheet(){
         <button class="action-sheet-btn" id="qaExpense"><span>💵</span><div><strong>Expense</strong><small>Fuel, parts, booth fees, shipping and more</small></div></button>
         <button class="action-sheet-btn" id="qaEvent"><span>📅</span><div><strong>Event</strong><small>Fair, festival, pickup or appointment</small></div></button>
 <button class="action-sheet-btn" id="qaSale"><span>🧾</span><div><strong>Record Sale</strong><small>Find by SKU, barcode or serial and mark sold</small></div></button>
-        <button class="action-sheet-btn" id="qaAuction"><span>🌐</span><div><strong>Online Auction</strong><small>Track ShopGoodwill or another auction</small></div></button>
+        <button class="action-sheet-btn" id="qaAuction"><span>🌐</span><div><strong>Online Auction</strong><small>Track an online or in-person auction</small></div></button>
       </div>
     </div>
   `);
@@ -2689,7 +3135,7 @@ function openGoogleCalendarEvent(event){
   window.open(`https://calendar.google.com/calendar/render?${params.toString()}`,"_blank","noopener");
 }
 function eventListItem(e){return `<div class="list-card" data-event-id="${e.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(e.color)}"></span>${esc(e.type||"Event")}</div><h4>${esc(e.title)}</h4><p>${prettyDateTime(e.startDate)}${e.location?` · ${esc(e.location)}`:""}</p></div></div>`;}
-function auctionListItem(a){const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);return `<div class="list-card"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""}</p></div></div>`;}
+function auctionListItem(a){const when=a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date);return `<div class="list-card clickable-list-card" data-auction-detail-id="${a.id}"><div><div class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.platform||"Auction")}</div><h4>${esc(a.name)}</h4><p>${when}${a.location?` · ${esc(a.location)}`:""}${a.status?` · ${esc(a.status)}`:""}</p></div></div>`;}
 async function findInventoryByScannedCode(value){
   const code=String(value||"").trim();
   if(!code)return null;
@@ -3634,6 +4080,19 @@ function cap(v){return v.charAt(0).toUpperCase()+v.slice(1);}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
 function nl2br(v){return esc(v).replace(/\n/g,"<br>");}
 function safeColor(v){return /^#[0-9a-f]{6}$/i.test(String(v||""))?v:"#45b7ff";}
+function openExternalUrl(value,label="website"){
+  let raw=String(value||"").trim();
+  if(!raw){alert(`No ${label} URL has been saved.`);return;}
+  if(!/^[a-z][a-z0-9+.-]*:/i.test(raw))raw="https://"+raw;
+  try{
+    const url=new URL(raw);
+    if(url.protocol!=="http:" && url.protocol!=="https:")throw new Error("Unsupported URL");
+    window.open(url.href,"_blank","noopener");
+  }catch(err){
+    alert(`The saved ${label} URL is not valid.`);
+  }
+}
+
 function csvCell(v){return `"${String(v??"").replace(/"/g,'""')}"`;}
 function downloadFile(name,content,type){const blob=content instanceof Blob?content:new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 })();

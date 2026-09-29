@@ -184,6 +184,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .photo-strip{display:flex;gap:9px;overflow:auto;margin-top:8px}
 .photo-thumb{position:relative;width:108px;height:88px;flex:0 0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#06111f}
 .photo-thumb img{width:100%;height:100%;object-fit:cover}
+.photo-thumb img[data-view-receipt]{cursor:pointer}
+.receipt-viewer{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:24px}
+.receipt-viewer-panel{position:relative;max-width:min(1000px,96vw);max-height:94vh;display:flex;align-items:center;justify-content:center}
+.receipt-viewer-panel img{display:block;max-width:100%;max-height:90vh;object-fit:contain;border-radius:16px;background:#06111f}
+.receipt-viewer-close{position:absolute;right:-12px;top:-12px;width:44px;height:44px;border:0;border-radius:50%;background:#111827;color:#fff;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .photo-thumb button{position:absolute;right:4px;top:4px;width:30px;height:30px;border:0;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;font-size:18px}
 .calendar-wrap{display:grid;grid-template-columns:1.4fr .6fr;gap:14px}
 .calendar{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);padding:15px}
@@ -413,3 +418,32 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.07
   text-underline-offset:2px;
   cursor:pointer;
 }
+
+/* Expense calculator */
+.expense-calculator{margin-bottom:18px}
+.expense-calculator .section-head{margin-bottom:10px}
+.expense-calculator .section-head p{margin:4px 0 0;color:var(--muted);line-height:1.45}
+.expense-calc-actions{display:flex;gap:8px;flex-wrap:wrap}
+.expense-category-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:14px 0 18px}
+.expense-category-option{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.expense-category-option input{width:18px;height:18px;margin:0}
+.expense-calc-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.expense-calc-controls .field{min-width:170px;margin:0}
+.expense-custom-range{display:flex;gap:12px;flex-wrap:wrap}
+.expense-calc-result{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.expense-calc-result>div{border:1px solid var(--line);border-radius:14px;padding:14px}
+.expense-calc-result strong{display:block;font-size:24px;margin-top:4px}
+.expense-calc-label{color:var(--muted);font-size:13px}
+.expense-records-head{margin-top:20px}
+@media(max-width:640px){.expense-category-grid{grid-template-columns:1fr 1fr}.expense-calc-result{grid-template-columns:1fr}.expense-calc-controls,.expense-custom-range{display:grid;grid-template-columns:1fr;width:100%}.expense-calc-controls .field{min-width:0}}
+.expense-report-header-field{margin-top:14px;max-width:420px}
+
+/* Compact dashboard capture bar */
+.dashboard-capture-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:13px 15px;margin-bottom:18px}
+.dashboard-capture-copy{display:flex;flex-direction:column;gap:3px}
+.dashboard-capture-copy strong{font-size:16px}
+.dashboard-capture-copy small{color:var(--muted);font-size:12px}
+.dashboard-capture-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.clickable-list-card{cursor:pointer}
+.clickable-list-card:hover{border-color:var(--cyan)}
+@media(max-width:640px){.dashboard-capture-bar{align-items:flex-start;flex-direction:column;padding:12px}.dashboard-capture-actions{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.dashboard-capture-actions .btn{padding-left:8px;padding-right:8px}}
