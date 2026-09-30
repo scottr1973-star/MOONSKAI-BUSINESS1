@@ -536,3 +536,28 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.07
 .calendar-export-count span{font-weight:800}
 .calendar-export-count strong{font-size:24px}
 @media(max-width:640px){.calendar-head-actions{width:100%;justify-content:flex-start}.calendar-head-actions .btn{flex:1 1 145px}.calendar-export-range{grid-template-columns:1fr}}
+
+/* Watch Lot details and outcome workflow */
+.watch-lot-card{cursor:pointer}
+.watch-lot-card:hover{border-color:rgba(83,226,212,.5)}
+.lot-outcome{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.lot-outcome-watching{border-color:#64748b;background:rgba(100,116,139,.12)}
+.lot-outcome-won{border-color:#22c55e;background:rgba(34,197,94,.12)}
+.lot-outcome-not-won{border-color:#ef4444;background:rgba(239,68,68,.1)}
+.lot-outcome-cataloged{border-color:#45b7ff;background:rgba(69,183,255,.12)}
+
+/* Main Auctions direct lot access */
+.auction-lot-preview-row{cursor:pointer}
+.auction-lot-preview-row:hover{background:rgba(255,255,255,.05)}
+
+/* Auction lifecycle and archive */
+.auction-needs-attention{margin-top:9px;padding:8px 10px;border:1px solid #f59e0b;border-radius:10px;background:rgba(245,158,11,.1);font-size:12px;font-weight:800}
+.archived-auction-card{cursor:pointer}
+.archived-auction-card:hover{border-color:rgba(83,226,212,.5)}
+.archived-lot-card{align-items:center}
+
+/* Auction attention integration */
+.auction-lot-preview-row>div:first-child{grid-template-columns:auto auto 1fr}
+.auction-lot-preview-actions{display:flex;flex-wrap:wrap;gap:7px;justify-content:flex-end}
+.auction-lot-preview-row small{line-height:1.45}
+@media(max-width:640px){.auction-lot-preview-actions{width:100%;justify-content:flex-start}.auction-lot-preview-actions .btn{width:100%}}

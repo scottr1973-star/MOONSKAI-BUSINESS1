@@ -20,7 +20,8 @@ inventoryCategory:"all",
 inventorySource:"all",
 inventoryLocation:"all",
 inventorySort:"updated",
-inventoryAttention:""
+inventoryAttention:"",
+auctionAttention:""
 };
 
 const STATUSES=["Draft / Finish Cataloging","Available","Reserved","Needs Work","Listed","Sold","Personal / Not For Sale"];
@@ -236,9 +237,9 @@ async function render(){
 }
 
 async function renderDashboard(){
-  const [items,events,expenses,mileage,sales,auctions,photos]=await Promise.all([
+  const [items,events,expenses,mileage,sales,auctions,photos,auctionLots]=await Promise.all([
     DB.getAll("items"),DB.getAll("events"),DB.getAll("expenses"),DB.getAll("mileage"),
-    DB.getAll("sales"),DB.getAll("auctions"),DB.getAll("itemPhotos")
+    DB.getAll("sales"),DB.getAll("auctions"),DB.getAll("itemPhotos"),DB.getAll("auctionLots")
   ]);
 
   const photoItems=new Set(photos.map(p=>p.itemId));
@@ -257,6 +258,7 @@ const profit=revenue-soldCost-saleCostsTotal-expensesTotal;
   const needsWork=items.filter(i=>i.status==="Needs Work" || String(i.workNeeded||"").trim()).filter(i=>i.status!=="Sold").length;
   const needsPricing=unsold.filter(i=>num(i.askingPrice)<=0).length;
   const needsPhotos=unsold.filter(i=>!photoItems.has(i.id)).length;
+  const needsAuctionFollowUp=auctions.filter(a=>auctionNeedsAttention(a,auctionLots)).length;
 
   const upcoming=events.filter(e=>new Date(e.startDate)>=startOfToday()).sort((a,b)=>new Date(a.startDate)-new Date(b.startDate)).slice(0,5);
 const upcomingAuctionRows=auctions.filter(a=>{    const v=a.endDateTime||a.date;    if(!v)return false;    return new Date(v.length>10?v:v+"T12:00:00")>=startOfToday();  }).sort((a,b)=>String(a.endDateTime||a.date).localeCompare(String(b.endDateTime||b.date)));  const dashboardAuctionGroups=new Map();  upcomingAuctionRows.forEach(a=>{    const day=String(a.endDateTime||a.date||"").slice(0,10);    if(!day)return;    if(!dashboardAuctionGroups.has(day))dashboardAuctionGroups.set(day,[]);    dashboardAuctionGroups.get(day).push(a);  });  const dashboardAuctionDays=[...dashboardAuctionGroups.entries()].slice(0,4).map(([day,rows])=>{    const highCount=rows.filter(a=>(a.priority||"Medium")==="High").length;    const timed=rows.filter(a=>a.endDateTime).slice().sort((a,b)=>String(a.endDateTime).localeCompare(String(b.endDateTime)));    let conflictCount=0;    for(let i=0;i<timed.length;i++){      for(let j=i+1;j<timed.length;j++){        const first=new Date(timed[i].endDateTime).getTime();        const second=new Date(timed[j].endDateTime).getTime();        if(!Number.isFinite(first)||!Number.isFinite(second))continue;        const difference=second-first;        if(difference>15*60*1000)break;        if(difference>=0)conflictCount++;      }    }    return {day,rows,highCount,conflictCount};  });
@@ -280,6 +282,7 @@ ${attentionCard("Finish Cataloging",needsFinish,"Incomplete item records","📋"
 ${attentionCard("Needs Work",needsWork,"Cleaning, repair or setup","🛠","Needs Work")}
 ${attentionCard("Needs Pricing",needsPricing,"No asking price yet","🏷","Needs Pricing")}
 ${attentionCard("Needs Photos",needsPhotos,"No item photo stored","📷","Needs Photos")}
+${attentionCard("Auction Follow-Up",needsAuctionFollowUp,"Ended auctions with unresolved Watch Lots","◆","Auction Follow-Up","auctions")}
     </section>
 
     <div class="section-head"><div><h2>Business snapshot</h2><p>Live totals from records stored on this device.</p></div></div>
@@ -336,7 +339,7 @@ ${attentionCard("Needs Photos",needsPhotos,"No item photo stored","📷","Needs 
       navigate("money");
     }
   });
-$$("[data-jump]").forEach(b=>b.onclick=()=>{if(b.dataset.attention)state.inventoryAttention=b.dataset.attention;navigate(b.dataset.jump);});
+$$("[data-jump]").forEach(b=>b.onclick=()=>{if(b.dataset.attention){if(b.dataset.jump==="inventory")state.inventoryAttention=b.dataset.attention;if(b.dataset.jump==="auctions")state.auctionAttention=b.dataset.attention;}navigate(b.dataset.jump);});
   $$("[data-event-id]").forEach(el=>el.onclick=()=>openEventModal(events.find(e=>e.id===el.dataset.eventId)));
   $$("[data-auction-detail-id]").forEach(el=>el.onclick=()=>openAuctionDetail(el.dataset.auctionDetailId));
 }
@@ -451,7 +454,7 @@ if(clearAttention)clearAttention.onclick=()=>{state.inventoryAttention="";render
   hydrateBlobImages();
 }
 
-async function openItemModal(item,seed){
+async function openItemModal(item,seed,onSaved){
   const editing=!!item, now=new Date().toISOString();
   const [events,auctions,itemCategories,storageLocations,itemSales]=await Promise.all([
     DB.getAll("events"),
@@ -584,7 +587,7 @@ ${textareaField("Buyer / sale notes","buyerNotes",draft.buyerNotes)}
 
       <div class="modal-actions sticky-actions">
         <button class="btn ghost" type="button" data-close>Cancel</button>
-        ${!editing?`<button class="btn secondary" type="button" id="saveDraftBtn">Save Draft</button>`:""}
+        ${!editing&&!draft.__sourceLotId?`<button class="btn secondary" type="button" id="saveDraftBtn">Save Draft</button>`:""}
         <button class="btn" type="submit">${editing?"Save Changes":"Save Catalog Record"}</button>
       </div>
     </form>
@@ -601,7 +604,7 @@ ${textareaField("Buyer / sale notes","buyerNotes",draft.buyerNotes)}
   $("#takePhotoBtn").onclick=async()=>{
     closeModal();
     await startCameraCapture(async blobs=>{
-      await openItemModal(editing?draft:null,Object.assign({},draft,{__photos:staged.map(p=>p.blob).filter(Boolean).concat(blobs)}));
+        await openItemModal(editing?draft:null,Object.assign({},draft,{__photos:staged.map(p=>p.blob).filter(Boolean).concat(blobs)}),onSaved);
     });
   };
   $("#choosePhotoBtn").onclick=()=>$("#galleryInput").click();
@@ -662,7 +665,8 @@ if(allItems.some(i=>i.id!==draft.id && String(i.sku||"").trim().toUpperCase()===
       createdAt:draft.createdAt||now,
       updatedAt:new Date().toISOString()
     });
-    delete saved.__photos;
+      delete saved.__photos;
+      delete saved.__sourceLotId;
 
     await DB.put("items",saved);
     const existing=await DB.getByIndex("itemPhotos","itemId",draft.id);
@@ -695,6 +699,7 @@ Object.assign(sale,{
       createdAt:new Date().toISOString()
     });
 
+      if(onSaved)await onSaved(saved,{forceDraft});
     closeModal();
     toast(forceDraft?"Draft saved — finish cataloging anytime.":editing?"Item updated.":"Item cataloged.");
     state.route="inventory";
@@ -2040,6 +2045,7 @@ ${selectField("Payment method","paymentMethod",paymentMethods,"Cash")}
 
   const form=$("#saleRegisterForm");
   const lookup=$("#saleLookup");
+  if(initialItemId){const initialItem=available.find(i=>i.id===initialItemId);if(initialItem)lookup.value=initialItem.sku||"";}
   const message=$("#saleLookupMessage");
   const cart=$("#saleCart");
 
@@ -2387,12 +2393,12 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Main Sections</h3>
-        <p><strong>Dashboard:</strong> Business totals, inventory attention items and upcoming activity.</p>
+          <p><strong>Dashboard:</strong> Business totals, central Needs Attention shortcuts, Auction Follow-Up and upcoming activity.</p>
         <p><strong>Inventory:</strong> Add, organize, search, group, label and manage everything owned, cataloged, listed or sold.</p>
         <p><strong>Calendar:</strong> Fairs, festivals, pickups, sales and other events.</p>
         <p><strong>Money:</strong> Business overview, expenses, mileage, item sales and the Sales Register.</p>
         <p><strong>Auctions:</strong> Auction sourcing, watch lots, bidding plans and winning-item intake.</p>
-        <p><strong>More:</strong> Backups, CSV exports, payment methods, persistent storage and this User Guide.</p>
+          <p><strong>More:</strong> Backups, CSV exports, payment methods, Archived Auctions, persistent storage and this User Guide.</p>
       </div>
     </section>
       <div class="section-head"><div><h3>Dashboard</h3><p>See the business at a glance and jump directly into the records behind the totals.</p></div></div>
@@ -2402,6 +2408,11 @@ async function renderUserGuide(){
           <h3>Business Snapshot</h3>
           <p>In Stock shows unsold inventory count. Invested shows landed cost tied up in unsold inventory. Combined Asking Prices is the sum of asking prices for unsold inventory. Estimated Net uses sales, sold inventory cost, selling costs and general business expenses.</p>
           <p>The Snapshot cards are clickable. In Stock opens Inventory, Invested and Combined Asking Prices open item breakdowns, and Estimated Net opens Money → Overview.</p>
+        </div>
+        <div class="panel">
+          <h3>Needs Attention</h3>
+          <p>The Dashboard keeps one central Needs attention area for unfinished business work. Inventory cards cover Finish Cataloging, Needs Work, Needs Pricing and Needs Photos.</p>
+          <p>Auction Follow-Up counts ended auctions that still contain unresolved Watch Lots. Auction Follow-Up opens Auctions filtered to those records so outcomes can be updated or won items can be cataloged without searching for them manually.</p>
         </div>
         <div class="panel">
           <h3>Upcoming Auctions</h3>
@@ -2489,13 +2500,14 @@ async function renderUserGuide(){
     <section class="grid-2">
       <div class="panel">
         <h3>Quick Sell From Inventory</h3>
-        <p>Open an available item and choose Sell Item. The Sales Register opens with that item already added to the sale.</p>
+          <p>Open an available item and choose Sell Item. The Sales Register opens with that item already added to the sale, and SKU / Identifier is filled automatically with that item's SKU because the item is already known.</p>
         <p>The asking price is used as the starting sale price, but the actual sale price can be changed before completing the transaction when a different price is negotiated.</p>
       </div>
 
       <div class="panel">
         <h3>Recording a Sale</h3>
         <p>The register can contain one or more inventory items. Confirm the sale date, prices, payment method, buyer information and optional reference information before completing the sale.</p>
+          <p>When Record Sale is opened directly from Money → Register or from Quick Action, SKU / Identifier starts blank so the item can be identified by SKU, UPC/barcode, serial number, manufacturer part number or other identifier.</p>
         <p>Completing the transaction marks the inventory item Sold and creates the connected sales and register records.</p>
       </div>
 
@@ -2577,14 +2589,26 @@ async function renderUserGuide(){
         <h3>Tracking Auctions</h3>
           <p>Auctions is a main navigation section. Save online or in-person auctions with the auction name, platform, date/end time, website, location, notes and High, Medium or Low priority.</p>
           <p>Auctions are grouped by closing day. Auctions that close within 15 minutes of one another are marked as Time Conflict so Priority can help decide which needs attention first.</p>
+          <p>Future and active auctions stay in the normal Auctions view. When an auction has ended, unresolved Watch Lots keep it visible as Auction Over · Needs Attention until their outcomes are completed.</p>
       </div>
 
-      <div class="panel">
-        <h3>Connecting Inventory</h3>
-          <p>Each auction can contain Watch Lots for individual items being considered. A Watch Lot has its own required Item / lot URL, lot end date/time, High/Medium/Low priority, expected resale, maximum bid and optional winning bid and acquisition costs.</p>
-          <p>Watch Lots appear directly on Auction cards for fast access. Open Listing opens that exact item listing, while Open Auction Page opens the parent auction website.</p>
-          <p>Watch Lots closing within 15 minutes of one another are marked as Time Conflict even when they belong to different auctions. If a lot is won, it can be moved into Inventory with the lot listing URL and lot closing time retained.</p>
-      </div>
+        <div class="panel">
+          <h3>Watch Lots</h3>
+          <p>Each auction can contain Watch Lots for individual items being considered. A Watch Lot stores its Item / lot URL, lot number, closing time, High/Medium/Low priority, outcome, expected resale, maximum bid, advertised condition and notes.</p>
+          <p>Watch Lots appear directly on the main Auction cards with basic information including outcome, lot number, closing time, expected resale and maximum bid. Click the lot card for full Lot Details. Open Listing opens the exact item listing.</p>
+          <p>The next action appears where the work is happening: Update Outcome for Watching, Catalog Item for a Won lot, or View Inventory Item after cataloging.</p>
+        </div>
+        <div class="panel">
+          <h3>Watch Lot Outcomes</h3>
+          <p>Use Watching while the result is unresolved. After the auction closes, change the lot to Won or Not Won. Cataloged is derived automatically after a Won lot is saved into Inventory; it is not an outcome selected manually.</p>
+          <p>An ended auction remains in Auctions with Auction Over · Needs Attention while any Watch Lot is still Watching or is Won but has not yet been cataloged.</p>
+          <p>The Dashboard Auction Follow-Up card opens Auctions filtered to those unresolved ended auctions so the remaining work can be completed directly.</p>
+        </div>
+        <div class="panel">
+          <h3>Archived Auctions</h3>
+          <p>After every Watch Lot in an ended auction is resolved as Not Won or Cataloged, the auction leaves the active Auctions screen automatically. An ended auction with no Watch Lots also archives automatically.</p>
+          <p>Use More → Archived Auctions to review retained auction history, Watch Lot outcomes, listing links, bids and connected Inventory items. Archiving keeps the business record; it does not delete it.</p>
+        </div>
     </section>
 
     <div class="section-head"><div><h3>Backup and Data Safety</h3><p>Protect the business records stored on this device.</p></div></div>
@@ -2655,6 +2679,15 @@ async function renderUserGuide(){
         <p><strong>10.</strong> Before using an Avery sheet for the first time, print on plain paper and hold it behind the label sheet against a light to confirm alignment.</p>
       </div>
 
+        <div class="panel">
+          <h3>Auction to Inventory</h3>
+          <p><strong>1.</strong> Track the auction and add the individual items you are considering as Watch Lots.</p>
+          <p><strong>2.</strong> Set each Watch Lot priority, closing time, expected resale and maximum bid before bidding.</p>
+          <p><strong>3.</strong> After the lot closes, use Update Outcome and choose Won or Not Won.</p>
+          <p><strong>4.</strong> For a Won lot, choose Catalog Item. Enter the final winning price and other acquisition costs in the Inventory intake record.</p>
+          <p><strong>5.</strong> Saving the Inventory item links it back to the Watch Lot. The lot becomes Cataloged and View Inventory Item opens the connected living inventory record.</p>
+          <p><strong>6.</strong> When every Watch Lot in an ended auction is Not Won or Cataloged, the auction moves automatically to More → Archived Auctions.</p>
+        </div>
       <div class="panel">
         <h3>Regular Backup Routine</h3>
         <p>Create a fresh full backup after meaningful inventory or sales work and keep copies somewhere safe outside the browser.</p>
@@ -2671,6 +2704,44 @@ async function renderUserGuide(){
   $("#guideBackBottom").onclick=()=>navigate("more");
 }
 
+
+async function openArchivedAuctionDetail(id){
+  const auction=await DB.getOne("auctions",id);if(!auction)return;
+  const allLots=await DB.getAll("auctionLots");
+  const lots=allLots.filter(l=>l.auctionId===id).sort((a,b)=>String(a.endDateTime||"9999-12-31T23:59").localeCompare(String(b.endDateTime||"9999-12-31T23:59")));
+  openModal(`
+    <div class="modal-head"><div><div class="badge">Archived Auction</div><h2 style="margin-top:8px">${esc(auction.name||"Auction")}</h2></div><button class="close-btn" data-close type="button">×</button></div>
+    <div class="modal-body">
+      <div class="panel">
+        <p><strong>Ended:</strong> ${esc(auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date))}</p>
+        <p><strong>Platform / site:</strong> ${esc(auction.platform||"—")}</p>
+        <p><strong>Company / seller:</strong> ${esc(auction.company||"—")}</p>
+        <p><strong>Location:</strong> ${esc(auction.location||"—")}</p>
+        <p><strong>Priority:</strong> ${esc(auction.priority||"Medium")}</p>
+      </div>
+      ${auction.notes?`<div class="panel"><h3>Notes</h3><p>${nl2br(auction.notes)}</p></div>`:""}
+      <div class="section-head"><div><h3>Watch list history</h3></div></div>
+      <div class="list">${lots.length?lots.map(l=>{const outcome=lotOutcome(l);return `<div class="list-card archived-lot-card"><div><div class="auction-card-topline"><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><span class="auction-priority auction-priority-small priority-${String(l.priority||"Medium").toLowerCase()}">${esc(l.priority||"Medium")} Priority</span></div><h4>${esc(l.name||"Untitled lot")}</h4><p>Lot ${esc(l.lotNumber||"—")} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-archived-lot-listing="${l.id}">Open Listing</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-archived-inventory="${l.id}">View Inventory Item</button>`:""}</div></div>`;}).join(""):empty("No watched lots were recorded.")}</div>
+    </div>
+    <div class="modal-actions">${auction.website?`<button class="btn secondary" id="archivedAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn" data-close type="button">Done</button></div>`);
+  const website=$("#archivedAuctionWebsite");
+  if(website)website.onclick=()=>openExternalUrl(auction.website,"auction page");
+  $$("[data-archived-lot-listing]",modalRoot).forEach(b=>b.onclick=()=>{const lot=lots.find(l=>l.id===b.dataset.archivedLotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
+  $$("[data-archived-inventory]",modalRoot).forEach(b=>b.onclick=()=>{const lot=lots.find(l=>l.id===b.dataset.archivedInventory);if(lot&&lot.inventoryItemId){closeModal();openItemDetail(lot.inventoryItemId);}});
+}
+
+async function openArchivedAuctions(){
+  const [auctions,lots]=await Promise.all([DB.getAll("auctions"),DB.getAll("auctionLots")]);
+  const archived=auctions.filter(a=>isAuctionEnded(a)&&!auctionNeedsAttention(a,lots)).sort((a,b)=>auctionEndTimestamp(b)-auctionEndTimestamp(a));
+  openModal(`
+    <div class="modal-head"><div><div class="eyebrow">HISTORY</div><h2>Archived Auctions</h2></div><button class="close-btn" data-close type="button">×</button></div>
+    <div class="modal-body">
+      <p style="color:var(--muted);line-height:1.55">Ended auctions move here automatically after their Watch Lots are resolved. Historical records are retained.</p>
+      <div class="list">${archived.length?archived.map(a=>{const rows=lots.filter(l=>l.auctionId===a.id);return `<div class="list-card archived-auction-card" data-archived-auction="${a.id}"><div><div class="badge">Auction Over</div><h4>${esc(a.name||"Auction")}</h4><p>${esc(a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date))}${a.platform?` · ${esc(a.platform)}`:""} · ${rows.length} watched lot${rows.length===1?"":"s"}</p></div><button class="btn secondary small" type="button">View</button></div>`;}).join(""):empty("No archived auctions yet.")}</div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close type="button">Done</button></div>`);
+  $$("[data-archived-auction]",modalRoot).forEach(row=>row.onclick=()=>openArchivedAuctionDetail(row.dataset.archivedAuction));
+}
 
 async function renderMore(){
   view.innerHTML=`
@@ -2695,17 +2766,23 @@ async function renderMore(){
   <p style="color:var(--muted);line-height:1.55">Manage the payment methods available in the Sales Register dropdown.</p>
   <button class="btn secondary" id="managePaymentMethods">Manage Payment Methods</button>
 </div>
-  <div class="panel">
-    <h3>User Guide</h3>
-    <p style="color:var(--muted);line-height:1.55">Instructions for inventory, sales, calendar, money, backups and everyday business workflows.</p>
-    <button class="btn secondary" id="openUserGuide">Open User Guide</button>
-  </div>
+    <div class="panel">
+      <h3>Archived Auctions</h3>
+      <p style="color:var(--muted);line-height:1.55">Review ended auctions after their Watch Lots are resolved.</p>
+      <button class="btn secondary" id="openArchivedAuctions">Open Archived Auctions</button>
+    </div>
+    <div class="panel">
+      <h3>User Guide</h3>
+      <p style="color:var(--muted);line-height:1.55">Instructions for inventory, sales, calendar, money, backups and everyday business workflows.</p>
+      <button class="btn secondary" id="openUserGuide">Open User Guide</button>
+    </div>
     </section>
   `;
   $("#exportBackup").onclick=exportBackup;
   $("#importBackup").onchange=importBackupFile;
   $$("[data-csv]").forEach(b=>b.onclick=()=>exportCSV(b.dataset.csv));
   $("#managePaymentMethods").onclick=()=>openPaymentMethodsModal();
+  $("#openArchivedAuctions").onclick=()=>openArchivedAuctions();
   $("#openUserGuide").onclick=()=>navigate("guide");
   $("#requestStorage").onclick=async()=>toast((await DB.requestPersistentStorage())?"Persistent storage granted.":"Persistent storage not granted or unsupported.");
 }
@@ -3188,8 +3265,30 @@ async function openItemCategoriesModal(){
 
   renderList();
 }
+function auctionEndTimestamp(auction){
+  const raw=auction&&(auction.endDateTime||auction.date);
+  if(!raw)return NaN;
+  const value=String(raw);
+  return new Date(value.length>10?value:`${value}T23:59:59`).getTime();
+}
+
+function isAuctionEnded(auction){
+  const endedAt=auctionEndTimestamp(auction);
+  return Number.isFinite(endedAt)&&endedAt<Date.now();
+}
+
+function auctionNeedsAttention(auction,lots){
+  if(!isAuctionEnded(auction))return false;
+  return lots.filter(l=>l.auctionId===auction.id).some(l=>{
+    const outcome=lotOutcome(l);
+    return outcome==="Watching"||outcome==="Won";
+  });
+}
+
 async function renderAuctionManager(){
-  const [auctions,lots]=await Promise.all([DB.getAll("auctions"),DB.getAll("auctionLots")]);
+  const [allAuctions,lots]=await Promise.all([DB.getAll("auctions"),DB.getAll("auctionLots")]);
+  let auctions=allAuctions.filter(a=>!isAuctionEnded(a)||auctionNeedsAttention(a,lots));
+  if(state.auctionAttention==="Auction Follow-Up")auctions=auctions.filter(a=>auctionNeedsAttention(a,lots));
   const priorityRank={High:0,Medium:1,Low:2};
   const normalizedPriority=a=>["High","Medium","Low"].includes(a.priority)?a.priority:"Medium";
   const auctionDay=a=>String(a.endDateTime||a.date||"").slice(0,10)||"Unscheduled";
@@ -3271,12 +3370,13 @@ async function renderAuctionManager(){
             <div>
               <div class="auction-card-topline">
                 <span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span>
-                <span class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${esc(a.status||"Planned")}</span>
+                <span class="badge"><span class="dot" style="background:${safeColor(a.color||"#f7c75d")}"></span>${isAuctionEnded(a)?"Auction Over":esc(a.status||"Planned")}</span>
               </div>
               <h4>${esc(a.name)}</h4>
               <p><strong>${esc(timeLabel)}</strong>${a.platform?` · ${esc(a.platform)}`:""}${a.location?` · ${esc(a.location)}`:""} · ${watchedLots} watched lot${watchedLots===1?"":"s"}</p>
               ${conflict?`<div class="auction-conflict-note">⚠ Time Conflict — another tracked auction closes within 15 minutes. Use Priority to decide which needs attention first.</div>`:""}
-              ${previewLots.length?`<div class="auction-lot-preview">${previewLots.map(l=>{const lotPriority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?new Date(l.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"Time not set";const lotConflict=lotConflictIds.has(l.id);return `<div class="auction-lot-preview-row ${lotConflict?"lot-time-conflict":""}"><div><span class="auction-priority auction-priority-small priority-${lotPriority.toLowerCase()}">${esc(lotPriority)}</span><strong>${esc(l.name||"Untitled lot")}</strong><small>${esc(lotTime)}${lotConflict?" · Time Conflict":""}</small></div>${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:`<span class="auction-lot-missing">URL missing</span>`}</div>`;}).join("")}${auctionLots.length>3?`<div class="auction-lot-more">+ ${auctionLots.length-3} more watched lot${auctionLots.length-3===1?"":"s"}</div>`:""}</div>`:""}
+              ${isAuctionEnded(a)&&auctionNeedsAttention(a,lots)?`<div class="auction-needs-attention">Auction Over · Needs Attention — finish the outcome or catalog any won lots before this auction moves to Archived Auctions.</div>`:""}
+              ${previewLots.length?`<div class="auction-lot-preview">${previewLots.map(l=>{const lotPriority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?new Date(l.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"Time not set";const lotConflict=lotConflictIds.has(l.id);const outcome=lotOutcome(l);return `<div data-lot-preview-detail="${l.id}" class="auction-lot-preview-row ${lotConflict?"lot-time-conflict":""}"><div><span class="auction-priority auction-priority-small priority-${lotPriority.toLowerCase()}">${esc(lotPriority)}</span><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><strong>${esc(l.name||"Untitled lot")}</strong><small>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)}${lotConflict?" · Time Conflict":""}<br>Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</small></div><div class="auction-lot-preview-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:`<span class="auction-lot-missing">URL missing</span>`}${outcome==="Watching"?`<button class="btn secondary small" type="button" data-lot-update="${l.id}">Update Outcome</button>`:""}${outcome==="Won"&&!l.inventoryItemId?`<button class="btn small" type="button" data-lot-catalog="${l.id}">Catalog Item</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-lot-inventory="${l.id}">View Inventory Item</button>`:""}</div></div>`;}).join("")}${auctionLots.length>3?`<div class="auction-lot-more">+ ${auctionLots.length-3} more watched lot${auctionLots.length-3===1?"":"s"}</div>`:""}</div>`:""}
             </div>
             <button class="btn secondary small" data-auction-id="${a.id}">Open</button>
           </div>`;
@@ -3291,14 +3391,19 @@ async function renderAuctionManager(){
         <h2>Auctions & sourcing</h2>
         <p>Upcoming opportunities grouped by day, closing time and priority.</p>
       </div>
-      <button class="btn small" id="addAuction">＋ Auction</button>
+      <div class="hero-actions">${state.auctionAttention?`<button class="btn secondary small" id="clearAuctionAttention" type="button">Clear ${esc(state.auctionAttention)}</button>`:""}<button class="btn small" id="addAuction">＋ Auction</button></div>
     </div>
-    <div class="auction-day-groups">${auctions.length?groupedHtml:empty("No auctions yet.")}</div>
+    <div class="auction-day-groups">${auctions.length?groupedHtml:empty("No active auctions. Ended auctions with completed outcomes are available under More → Archived Auctions.")}</div>
   `;
 
   $("#addAuction").onclick=()=>openAuctionModal();
+  const clearAuctionAttention=$("#clearAuctionAttention");if(clearAuctionAttention)clearAuctionAttention.onclick=()=>{state.auctionAttention="";renderAuctionManager();};
   $$("[data-auction-id]").forEach(b=>b.onclick=()=>openAuctionDetail(b.dataset.auctionId));
   $$("[data-lot-listing]",view).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(row=>row.id===b.dataset.lotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
+  $$("[data-lot-preview-detail]",view).forEach(row=>row.onclick=()=>{const lot=lots.find(l=>l.id===row.dataset.lotPreviewDetail);const auction=lot?auctions.find(a=>a.id===lot.auctionId):null;if(auction&&lot)openLotDetail(auction,lot);});
+  $$("[data-lot-update]",view).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.lotUpdate);const auction=lot?allAuctions.find(a=>a.id===lot.auctionId):null;if(auction&&lot)openLotModal(auction,lot);});
+  $$("[data-lot-catalog]",view).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.lotCatalog);const auction=lot?allAuctions.find(a=>a.id===lot.auctionId):null;if(auction&&lot)catalogLotToInventory(auction,lot);});
+  $$("[data-lot-inventory]",view).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.lotInventory);if(lot&&lot.inventoryItemId)openItemDetail(lot.inventoryItemId);});
 }
 
 
@@ -3339,6 +3444,13 @@ async function openAuctionModal(auction,seed){
   };
 }
 
+function lotOutcome(lot){
+  if(lot&&lot.inventoryItemId)return "Cataloged";
+  if(lot&&["Watching","Won","Not Won"].includes(lot.outcome))return lot.outcome;
+  if(lot&&num(lot.winningBid)>0)return "Won";
+  return "Watching";
+}
+
 async function openAuctionDetail(id){
   const auction=await DB.getOne("auctions",id);if(!auction)return;
   const allLots=await DB.getAll("auctionLots");
@@ -3358,55 +3470,108 @@ async function openAuctionDetail(id){
   openModal(`
     <div class="modal-head"><div><div class="badge"><span class="dot" style="background:${safeColor(auction.color)}"></span>${esc(auction.status)}</div><h2 style="margin-top:8px">${esc(auction.name)}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <div class="modal-body">
-        <p style="color:var(--muted)">${auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date)}${auction.platform?` · ${esc(auction.platform)}`:""}${auction.company?` · ${esc(auction.company)}`:""}${auction.location?` · ${esc(auction.location)}`:""}</p>
-        <div class="auction-priority priority-${String(auction.priority||"Medium").toLowerCase()}">${esc(auction.priority||"Medium")} Priority</div>
+      <p style="color:var(--muted)">${auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date)}${auction.platform?` · ${esc(auction.platform)}`:""}${auction.company?` · ${esc(auction.company)}`:""}${auction.location?` · ${esc(auction.location)}`:""}</p>
+      <div class="auction-priority priority-${String(auction.priority||"Medium").toLowerCase()}">${esc(auction.priority||"Medium")} Priority</div>
       ${auction.notes?`<div class="panel"><p>${nl2br(auction.notes)}</p></div>`:""}
       <div class="section-head"><div><h3>Watch list</h3></div><button class="btn small" id="addLot">＋ Lot</button></div>
-        <div class="list">${lots.length?lots.map(l=>{const priority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?prettyDateTime(l.endDateTime):"Time not set";const lotConflict=lotConflictIds.has(l.id);return `<div class="list-card watch-lot-card ${lotConflict?"lot-time-conflict":""}"><div><div class="auction-card-topline"><span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span>${lotConflict?`<span class="watch-lot-conflict-label">⚠ Time Conflict</span>`:""}</div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${l.winningBid?` · Won ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:""}<button class="btn secondary small" type="button" data-lot-id="${l.id}">Edit</button></div></div>`;}).join(""):empty("No watched lots yet.")}</div>
+      <div class="list">${lots.length?lots.map(l=>{const priority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?prettyDateTime(l.endDateTime):"Time not set";const lotConflict=lotConflictIds.has(l.id);const outcome=lotOutcome(l);return `<div class="list-card watch-lot-card ${lotConflict?"lot-time-conflict":""}" data-lot-detail="${l.id}"><div><div class="auction-card-topline"><span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span>${lotConflict?`<span class="watch-lot-conflict-label">⚠ Time Conflict</span>`:""}</div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:""}${outcome==="Won"&&!l.inventoryItemId?`<button class="btn small" type="button" data-catalog-lot="${l.id}">Catalog Item</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-view-inventory="${l.id}">View Inventory Item</button>`:""}<button class="btn secondary small" type="button" data-lot-detail-button="${l.id}">Details</button></div></div>`;}).join(""):empty("No watched lots yet.")}</div>
     </div>
-      <div class="modal-actions"><button class="btn danger" id="deleteAuction" type="button">Delete</button>${auction.website?`<button class="btn secondary" id="openAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn secondary" id="editAuction" type="button">Edit Auction</button><button class="btn" data-close type="button">Done</button></div>
+    <div class="modal-actions"><button class="btn danger" id="deleteAuction" type="button">Delete</button>${auction.website?`<button class="btn secondary" id="openAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn secondary" id="editAuction" type="button">Edit Auction</button><button class="btn" data-close type="button">Done</button></div>
   `);
   $("#addLot").onclick=()=>openLotModal(auction);
   const openAuctionWebsite=$("#openAuctionWebsite");
   if(openAuctionWebsite)openAuctionWebsite.onclick=()=>openExternalUrl(auction.website,"auction page");
   $("#editAuction").onclick=()=>{closeModal();openAuctionModal(auction);};
   $("#deleteAuction").onclick=async()=>{if(confirm("Delete this auction and its watch-list lots?")){for(const l of lots)await DB.remove("auctionLots",l.id);await DB.remove("auctions",id);closeModal();renderAuctionManager();}};
-  $$("[data-lot-id]").forEach(b=>b.onclick=()=>openLotModal(auction,lots.find(l=>l.id===b.dataset.lotId)));
-  $$("[data-lot-listing]",modalRoot).forEach(b=>b.onclick=()=>{const lot=lots.find(row=>row.id===b.dataset.lotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
+  $$("[data-lot-detail]",modalRoot).forEach(row=>row.onclick=()=>{const lot=lots.find(l=>l.id===row.dataset.lotDetail);if(lot)openLotDetail(auction,lot);});
+  $$("[data-lot-detail-button]",modalRoot).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.lotDetailButton);if(lot)openLotDetail(auction,lot);});
+  $$("[data-lot-listing]",modalRoot).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.lotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
+  $$("[data-catalog-lot]",modalRoot).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.catalogLot);if(lot)catalogLotToInventory(auction,lot);});
+  $$("[data-view-inventory]",modalRoot).forEach(b=>b.onclick=e=>{e.stopPropagation();const lot=lots.find(l=>l.id===b.dataset.viewInventory);if(lot&&lot.inventoryItemId){closeModal();openItemDetail(lot.inventoryItemId);}});
+}
+
+async function openLotDetail(auction,lot){
+  if(!auction||!lot)return;
+  const outcome=lotOutcome(lot);
+  openModal(`
+    <div class="modal-head"><div><div class="auction-card-topline"><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><span class="auction-priority auction-priority-small priority-${String(lot.priority||"Medium").toLowerCase()}">${esc(lot.priority||"Medium")} Priority</span></div><h2 style="margin-top:8px">${esc(lot.name||"Watch Lot")}</h2></div><button class="close-btn" data-close type="button">×</button></div>
+    <div class="modal-body">
+      <div class="grid-2">
+        <div class="panel"><h3>Lot Details</h3><p><strong>Auction:</strong> ${esc(auction.name||"—")}</p><p><strong>Lot / item number:</strong> ${esc(lot.lotNumber||"—")}</p><p><strong>Closing time:</strong> ${esc(lot.endDateTime?prettyDateTime(lot.endDateTime):"Not set")}</p><p><strong>Outcome:</strong> ${esc(outcome)}</p><p><strong>Priority:</strong> ${esc(lot.priority||"Medium")}</p><p><strong>Expected resale:</strong> ${money(lot.expectedResale)}</p><p><strong>Maximum bid:</strong> ${money(lot.maxBid)}</p></div>
+        <div class="panel"><h3>Catalog Connection</h3><p><strong>Winning price:</strong> ${num(lot.winningBid)>0?money(lot.winningBid):"Not entered yet"}</p><p><strong>Inventory status:</strong> ${lot.inventoryItemId?"Cataloged":"Not cataloged"}</p></div>
+      </div>
+      ${lot.conditionAdvertised?`<div class="panel"><h3>Advertised Condition</h3><p>${nl2br(lot.conditionAdvertised)}</p></div>`:""}
+      ${lot.notes?`<div class="panel"><h3>Notes</h3><p>${nl2br(lot.notes)}</p></div>`:""}
+    </div>
+    <div class="modal-actions">${lot.listingUrl?`<button class="btn secondary" id="lotDetailListing" type="button">Open Listing</button>`:""}${outcome==="Won"&&!lot.inventoryItemId?`<button class="btn" id="lotDetailCatalog" type="button">Catalog Item</button>`:""}${lot.inventoryItemId?`<button class="btn" id="lotDetailInventory" type="button">View Inventory Item</button>`:""}<button class="btn secondary" id="lotDetailEdit" type="button">Edit</button><button class="btn" data-close type="button">Done</button></div>
+  `);
+  const listing=$("#lotDetailListing");if(listing)listing.onclick=()=>openExternalUrl(lot.listingUrl,"lot listing");
+  const catalog=$("#lotDetailCatalog");if(catalog)catalog.onclick=()=>catalogLotToInventory(auction,lot);
+  const inventory=$("#lotDetailInventory");if(inventory)inventory.onclick=()=>{closeModal();openItemDetail(lot.inventoryItemId);};
+  $("#lotDetailEdit").onclick=()=>{closeModal();openLotModal(auction,lot);};
+}
+
+async function catalogLotToInventory(auction,lot){
+  const seed={
+    __sourceLotId:lot.id,
+    name:lot.name||"",
+    color:auction.color||"#f7c75d",
+    purchaseDate:auction.date||today(),
+    sourceType:auction.auctionMode==="In Person"?"In-Person Auction":"Online Auction",
+    sourcePlatform:auction.platform||"",
+    purchaseSource:auction.name,
+    sourceSeller:auction.company||"",
+    sourceLocation:auction.location||"",
+    listingTitle:lot.name,
+    listingUrl:lot.listingUrl||"",
+    lotNumber:lot.lotNumber||"",
+    auctionEndDateTime:lot.endDateTime||auction.endDateTime||"",
+    auctionId:auction.id,
+    shippingStatus:auction.shippingStatus||"Won - Awaiting Payment",
+    purchasePrice:"",
+    buyerPremium:"",
+    salesTax:"",
+    shippingCost:"",
+    handlingCost:"",
+    askingPrice:lot.expectedResale,
+    conditionNotes:lot.conditionAdvertised||"",
+    notes:`Imported from tracked auction lot ${lot.lotNumber||""}. ${lot.notes||""}`.trim()
+  };
+  closeModal();
+  await openItemModal(null,seed,async saved=>{
+    lot.outcome="Won";
+    lot.winningBid=saved.purchasePrice||"";
+    lot.buyerPremium=saved.buyerPremium||"";
+    lot.tax=saved.salesTax||"";
+    lot.shippingCost=saved.shippingCost||"";
+    lot.handlingCost=saved.handlingCost||"";
+    lot.inventoryItemId=saved.id;
+    await DB.put("auctionLots",lot);
+    await DB.put("itemLogs",{id:DB.uid("log"),itemId:saved.id,text:`Won from ${auction.name} for ${money(saved.purchasePrice)}. Landed cost currently ${money(saved.totalLandedCost)}.`,createdAt:new Date().toISOString()});
+  });
 }
 
 async function openLotModal(auction,lot){
-  const l=lot||{
-    id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",endDateTime:"",priority:"Medium",
-    expectedResale:"",maxBid:"",winningBid:"",buyerPremium:"",tax:"",shippingCost:"",handlingCost:"",
-    conditionAdvertised:"",notes:"",inventoryItemId:""
-  };
+  const l=lot||{id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",endDateTime:"",priority:"Medium",outcome:"Watching",expectedResale:"",maxBid:"",winningBid:"",buyerPremium:"",tax:"",shippingCost:"",handlingCost:"",conditionAdvertised:"",notes:"",inventoryItemId:""};
+  const currentOutcome=lotOutcome(l)==="Cataloged"?"Won":lotOutcome(l);
   openModal(`
     <div class="modal-head"><h2>${lot?"Edit Watch Lot":"Add Watch Lot"}</h2><button class="close-btn" data-close type="button">×</button></div>
     <form id="lotForm"><div class="modal-body"><div class="record-section">
-      <div class="record-section-title"><span>👀</span><div><strong>Watch item</strong><small>Know the ceiling before bidding and the real cost after winning.</small></div></div>
+      <div class="record-section-title"><span>👀</span><div><strong>Watch item</strong><small>Set the bidding ceiling now. Record the result when the auction ends.</small></div></div>
       <div class="form-grid">
         ${field("Item / lot name","name",l.name,true)}
         ${field("Lot / item number","lotNumber",l.lotNumber)}
         ${field("Item / lot URL","listingUrl",l.listingUrl,true)}
         ${field("Lot end date/time","endDateTime",l.endDateTime,false,"datetime-local")}
         ${selectField("Priority","priority",["High","Medium","Low"],l.priority||"Medium")}
+        ${selectField("Outcome","outcome",["Watching","Won","Not Won"],currentOutcome)}
         ${field("Expected resale","expectedResale",l.expectedResale,false,"number","0.01")}
         ${field("Maximum bid","maxBid",l.maxBid,false,"number","0.01")}
-        ${field("Winning bid","winningBid",l.winningBid,false,"number","0.01")}
-        ${field("Buyer premium","buyerPremium",l.buyerPremium,false,"number","0.01")}
-        ${field("Tax","tax",l.tax,false,"number","0.01")}
-        ${field("Shipping","shippingCost",l.shippingCost,false,"number","0.01")}
-        ${field("Handling","handlingCost",l.handlingCost,false,"number","0.01")}
         ${textareaField("Advertised condition","conditionAdvertised",l.conditionAdvertised)}
         ${textareaField("Notes","notes",l.notes)}
       </div></div></div>
-      <div class="modal-actions">
-        ${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}
-        ${lot&&num(l.winningBid)>0&&!l.inventoryItemId?`<button class="btn secondary" id="lotToInventory" type="button">Catalog Winning Item</button>`:""}
-        ${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}
-        <button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button>
-      </div></form>
+      <div class="modal-actions">${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}<button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button></div>
+    </form>
   `);
   const openLotWebsite=$("#openLotWebsite");
   if(openLotWebsite)openLotWebsite.onclick=()=>openExternalUrl(l.listingUrl,"lot listing");
@@ -3416,37 +3581,14 @@ async function openLotModal(auction,lot){
     data.listingUrl=String(data.listingUrl||"").trim();
     if(!data.listingUrl){alert("Add the Item / lot URL before saving this Watch Lot.");return;}
     if(!["High","Medium","Low"].includes(data.priority))data.priority="Medium";
+    if(!["Watching","Won","Not Won"].includes(data.outcome))data.outcome="Watching";
     await DB.put("auctionLots",Object.assign({},l,data));
-    closeModal();openAuctionDetail(auction.id);
+    closeModal();
+      await renderAuctionManager();
+    openAuctionDetail(auction.id);
   };
   if(lot)$("#deleteLot").onclick=async()=>{await DB.remove("auctionLots",l.id);closeModal();openAuctionDetail(auction.id);};
-  if(lot&&num(l.winningBid)>0&&!l.inventoryItemId)$("#lotToInventory").onclick=async()=>{
-    const itemId=DB.uid("item");
-    const extra=num(l.buyerPremium)+num(l.tax)+num(l.shippingCost)+num(l.handlingCost);
-    const item={
-      id:itemId,name:l.name,category:"",brand:"",model:"",serialNumber:"",year:"",condition:"",
-      status:"Draft / Finish Cataloging",color:auction.color||"#f7c75d",storageLocation:"",
-      purchaseDate:auction.date||today(),sourceType:auction.auctionMode==="In Person"?"In-Person Auction":"Online Auction",
-      sourcePlatform:auction.platform||"",purchaseSource:auction.name,sourceSeller:auction.company||"",
-      sourceLocation:auction.location||"",listingTitle:l.name,listingUrl:l.listingUrl||"",
-      lotNumber:l.lotNumber||"",auctionEndDateTime:l.endDateTime||auction.endDateTime||"",auctionId:auction.id,
-      shippingStatus:auction.shippingStatus||"Won - Awaiting Payment",
-      purchasePrice:l.winningBid,buyerPremium:l.buyerPremium,tax:"",salesTax:l.tax,
-      shippingCost:l.shippingCost,handlingCost:l.handlingCost,otherAcquisitionCosts:"",
-      acquisitionCosts:extra,totalLandedCost:num(l.winningBid)+extra,
-      askingPrice:l.expectedResale,minimumPrice:"",soldPrice:"",saleDate:"",soldEventId:"",
-      description:"",conditionNotes:l.conditionAdvertised||"",workNeeded:"",repairNotes:"",
-      estimatedRepairCost:"",notes:`Imported from tracked auction lot ${l.lotNumber||""}. ${l.notes||""}`.trim(),
-      createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
-    };
-    await DB.put("items",item);
-    await DB.put("itemLogs",{id:DB.uid("log"),itemId:itemId,text:`Won from ${auction.name} for ${money(l.winningBid)}. Landed cost currently ${money(item.totalLandedCost)}.`,createdAt:new Date().toISOString()});
-    l.inventoryItemId=itemId;await DB.put("auctionLots",l);
-    toast("Winning auction item created as an inventory draft.");
-    closeModal();openItemModal(item);
-  };
 }
-
 
 function openQuickActionSheet(){
   openModal(`
@@ -3694,7 +3836,7 @@ function field(label,name,value="",required=false,type="text",step=""){return `<
 function textareaField(label,name,value=""){return `<div class="field full"><label>${esc(label)}</label><textarea class="textarea" name="${esc(name)}">${esc(value??"")}</textarea></div>`;}
 function selectField(label,name,options,value=""){return `<div class="field"><label>${esc(label)}</label><select class="select" name="${esc(name)}">${options.map(o=>`<option ${String(o)===String(value)?"selected":""}>${esc(o)}</option>`).join("")}</select></div>`;}
 function relationField(label,name,options,value=""){return `<div class="field"><label>${esc(label)}</label><select class="select" name="${esc(name)}"><option value="">— None —</option>${options.map(([id,n])=>`<option value="${esc(id)}" ${id===value?"selected":""}>${esc(n)}</option>`).join("")}</select></div>`;}
-function attentionCard(label,value,sub,icon,filter){return `<button class="attention-card" data-jump="inventory" data-attention="${esc(filter)}"><span class="attention-icon">${icon}</span><span class="attention-number">${value}</span><strong>${label}</strong><small>${sub}</small></button>`;}
+function attentionCard(label,value,sub,icon,filter,route="inventory"){return `<button class="attention-card" data-jump="${esc(route)}" data-attention="${esc(filter)}"><span class="attention-icon">${icon}</span><span class="attention-number">${value}</span><strong>${label}</strong><small>${sub}</small></button>`;}
 function itemCost(i){
   const repair=num(i.estimatedRepairCost);
   const explicit=num(i.totalLandedCost);
