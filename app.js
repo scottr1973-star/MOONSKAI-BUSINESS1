@@ -357,8 +357,6 @@ async function renderInventory(){
   const locations=await getStorageLocations();
 
 let filtered=items.filter(i=>{
-const hay=`${i.sku||""} ${i.upc||""} ${i.manufacturerPartNumber||""} ${i.otherIdentifier||""} ${i.name||""} ${i.brand||""} ${i.model||""} ${i.serialNumber||""} ${i.category||""} ${i.notes||""} ${i.sourcePlatform||""} ${i.sourceType||""} ${i.purchaseSource||""} ${i.storageLocation||""}`.toLowerCase();
-  if(!hay.includes(state.inventorySearch.toLowerCase()))return false;
 if(state.inventoryStatus==="active" && i.status==="Sold")return false;
 if(state.inventoryStatus!=="all" && state.inventoryStatus!=="active" && i.status!==state.inventoryStatus)return false;
   if(state.inventoryCategory!=="all" && i.category!==state.inventoryCategory)return false;
@@ -378,10 +376,16 @@ else if(state.inventorySort==="costHigh")filtered.sort((a,b)=>itemCost(b)-itemCo
 else if(state.inventorySort==="costLow")filtered.sort((a,b)=>itemCost(a)-itemCost(b));
 else if(state.inventorySort==="priceHigh")filtered.sort((a,b)=>num(b.askingPrice)-num(a.askingPrice));
 else if(state.inventorySort==="priceLow")filtered.sort((a,b)=>num(a.askingPrice)-num(b.askingPrice));
+  const inventorySearchMatches=i=>{
+    const hay=`${i.sku||""} ${i.upc||""} ${i.manufacturerPartNumber||""} ${i.otherIdentifier||""} ${i.name||""} ${i.brand||""} ${i.model||""} ${i.serialNumber||""} ${i.category||""} ${i.notes||""} ${i.sourcePlatform||""} ${i.sourceType||""} ${i.purchaseSource||""} ${i.storageLocation||""}`.toLowerCase();
+    return hay.includes(state.inventorySearch.toLowerCase());
+  };
+  let displayed=filtered.filter(inventorySearchMatches);
+
 
   view.innerHTML=`
     <div class="section-head">
-      <div><h2>Inventory</h2><p>${filtered.length===items.length?`${items.length} total item${items.length===1?"":"s"} stored locally.`:`${filtered.length} matching item${filtered.length===1?"":"s"} · ${items.length} total`}</p></div>
+      <div><h2>Inventory</h2><p>${displayed.length===items.length?`${items.length} total item${items.length===1?"":"s"} stored locally.`:`${displayed.length} matching item${displayed.length===1?"":"s"} · ${items.length} total`}</p></div>
       <div class="inventory-head-actions">
         <button class="btn camera-btn small" id="inventoryCamera">📷 Capture</button>
           <button class="btn secondary small" id="printInventoryLabels">🏷 Print Labels</button>
@@ -431,18 +435,29 @@ else if(state.inventorySort==="priceLow")filtered.sort((a,b)=>num(a.askingPrice)
   ${state.inventoryAttention?`<button class="btn secondary small" id="clearAttention">Clear ${esc(state.inventoryAttention)}</button>`:""}
 </div>
     <section class="inventory-grid">
-      ${filtered.length?filtered.map(i=>itemCard(i,primary.get(i.id))).join(""):empty("No matching inventory items. Tap + to add your first item.")}
+        ${displayed.length?displayed.map(i=>itemCard(i,primary.get(i.id))).join(""):empty("No matching inventory items. Tap + to add your first item.")}
     </section>
   `;
 
   $("#inventoryCamera").onclick=()=>startCameraCapture();
   $("#addItemTop").onclick=()=>openItemModal();
-  $("#printInventoryLabels").onclick=()=>openLabelSheetPrinter(filtered);
+  $("#printInventoryLabels").onclick=()=>openLabelSheetPrinter(displayed);
   $("#scanInventoryCode").onclick=()=>openInventoryCodeScanner();
   $("#inventoryManageCategories").onclick=()=>openItemCategoriesModal();
   $("#inventoryManageLocations").onclick=()=>openStorageLocationsModal();
-  $("#inventorySummary").onclick=()=>openInventorySummary(filtered);
-$("#inventorySearch").oninput=e=>{state.inventorySearch=e.target.value;renderInventory();};
+  $("#inventorySummary").onclick=()=>openInventorySummary(displayed);
+$("#inventorySearch").oninput=e=>{
+  state.inventorySearch=e.target.value;
+  displayed=filtered.filter(inventorySearchMatches);
+  const summary=view.querySelector(".section-head p");
+  if(summary)summary.textContent=displayed.length===items.length?`${items.length} total item${items.length===1?"":"s"} stored locally.`:`${displayed.length} matching item${displayed.length===1?"":"s"} · ${items.length} total`;
+  const grid=view.querySelector(".inventory-grid");
+  if(grid)grid.innerHTML=displayed.length?displayed.map(i=>itemCard(i,primary.get(i.id))).join(""):empty("No matching inventory items. Tap + to add your first item.");
+  $("#printInventoryLabels").onclick=()=>openLabelSheetPrinter(displayed);
+  $("#inventorySummary").onclick=()=>openInventorySummary(displayed);
+  $$(".item-card[data-id]").forEach(card=>card.onclick=()=>openItemDetail(card.dataset.id));
+  hydrateBlobImages();
+};
 $("#inventoryStatus").onchange=e=>{state.inventoryStatus=e.target.value;state.inventoryAttention="";renderInventory();};
 $("#inventoryCategory").onchange=e=>{state.inventoryCategory=e.target.value;renderInventory();};
 $("#inventorySource").onchange=e=>{state.inventorySource=e.target.value;renderInventory();};
