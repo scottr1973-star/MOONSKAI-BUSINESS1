@@ -3884,12 +3884,9 @@ async function openAuctionModal(auction,seed){
         ${field("Auction company / seller","company",a.company)}
         ${field("Listing / auction URL","website",a.website)}
         ${field("Location","location",a.location)}
-        ${field("Auction date","date",a.date,false,"date")}
-        ${field("End date/time","endDateTime",a.endDateTime,false,"datetime-local")}
+        ${field("Auction date / time","endDateTime",a.endDateTime,false,"datetime-local")}
         ${selectField("Priority","priority",["High","Medium","Low"],a.priority||"Medium")}
         ${field("Preview / pickup date","previewDate",a.previewDate,false,"date")}
-        ${selectField("Status","status",["Watching","Bidding","Won","Lost / Did Not Win","Completed","Cancelled"],a.status)}
-        ${selectField("Shipping / fulfillment","shippingStatus",SHIPPING_STATUSES,a.shippingStatus||"Watching")}
         <div class="field"><label>Color</label><input class="input" style="padding:5px" type="color" name="color" value="${safeColor(a.color)}"></div>
         ${textareaField("Notes","notes",a.notes)}
       </div></div>
@@ -3897,7 +3894,10 @@ async function openAuctionModal(auction,seed){
   `);
   $("#auctionForm").onsubmit=async e=>{
     e.preventDefault();
-    await DB.put("auctions",Object.assign({},a,Object.fromEntries(new FormData(e.currentTarget).entries())));
+    const data=Object.fromEntries(new FormData(e.currentTarget).entries());
+    if(data.endDateTime)data.date=String(data.endDateTime).slice(0,10);
+    else data.date=a.date||today();
+    await DB.put("auctions",Object.assign({},a,data));
     closeModal();toast("Auction saved.");navigate("auctions");
   };
 }
