@@ -731,7 +731,7 @@ async function openItemDetail(id){
   openModal(`
     <div class="modal-head"><div><div class="badge"><span class="dot" style="background:${safeColor(item.color)}"></span>${esc(item.status)}</div><h2 style="margin-top:8px">${esc(item.name||"Item")}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <div class="modal-body">
-      <div class="photo-strip">${photos.length?photos.map(p=>`<div class="photo-thumb" style="width:150px;height:118px"><img data-blob-id="${p.id}" alt=""></div>`).join(""):empty("No photos yet.")}</div>
+      <div class="photo-strip">${photos.length?photos.map(p=>`<div class="photo-thumb" style="width:150px;height:118px"><img data-blob-id="${p.id}" data-view-item-photo="${p.id}" alt="Product photo" title="View product photo"></div>`).join(""):empty("No photos yet.")}</div>
 <section class="stats" style="grid-template-columns:repeat(3,1fr);margin:14px 0">
   ${stat("Purchase",money(item.purchasePrice),"")}
   ${stat("Item Cost",money(itemCost(item)),"")}
@@ -751,6 +751,44 @@ async function openItemDetail(id){
   `);
 
   hydrateBlobImages(photos);
+  $$("[data-view-item-photo]",modalRoot).forEach(image=>{
+    image.onclick=()=>{
+      const photo=photos.find(p=>p.id===image.dataset.viewItemPhoto);
+      if(!photo||!photo.blob)return;
+
+      const url=URL.createObjectURL(photo.blob);
+      const viewer=document.createElement("div");
+      viewer.className="receipt-viewer";
+
+      const panel=document.createElement("div");
+      panel.className="receipt-viewer-panel";
+
+      const closeButton=document.createElement("button");
+      closeButton.type="button";
+      closeButton.className="receipt-viewer-close";
+      closeButton.setAttribute("aria-label","Close product photo viewer");
+      closeButton.textContent="×";
+
+      const fullImage=document.createElement("img");
+      fullImage.src=url;
+      fullImage.alt="Product photo";
+
+      const closeViewer=()=>{
+        URL.revokeObjectURL(url);
+        viewer.remove();
+      };
+
+      closeButton.onclick=closeViewer;
+      viewer.onclick=event=>{
+        if(event.target===viewer)closeViewer();
+      };
+
+      panel.appendChild(closeButton);
+      panel.appendChild(fullImage);
+      viewer.appendChild(panel);
+      modalRoot.appendChild(viewer);
+    };
+  });
   $("#editItemBtn").onclick=()=>{closeModal();openItemModal(item);};
 $("#printPriceTagBtn").onclick=()=>{closeModal();openLabelSheetPrinter([item]);};
 if(item.status!=="Sold"){
@@ -1171,7 +1209,8 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
       receiptCounts.set(a.ownerId,(receiptCounts.get(a.ownerId)||0)+1);
     });
 
-    const categoryOptions=EXPENSE_CATEGORIES.map(category=>`
+    const expenseCategories=await getExpenseCategories(expenses);
+    const categoryOptions=expenseCategories.map(category=>`
       <label class="expense-category-option">
         <input type="checkbox" data-expense-category="${esc(category)}">
         <span>${esc(category)}</span>
@@ -1755,12 +1794,12 @@ ${table(
 }
 
 async function openExpenseModal(exp,receiptSeed){
-  const [items,events,auctions]=await Promise.all([DB.getAll("items"),DB.getAll("events"),DB.getAll("auctions")]);
+  const [items,events,auctions,expenseCategories]=await Promise.all([DB.getAll("items"),DB.getAll("events"),DB.getAll("auctions"),getExpenseCategories()]);
   const e=exp||{id:DB.uid("expense"),date:today(),category:"Fuel",amount:"",vendor:"",description:"",itemId:"",eventId:"",auctionId:"",paymentMethod:"",notes:""};
   openModal(`
     <div class="modal-head"><h2>${exp?"Edit Expense":"Add Expense"}</h2><button class="close-btn" data-close type="button">×</button></div>
     <form id="expenseForm"><div class="modal-body"><div class="form-grid">
-      ${field("Date","date",e.date,true,"date")}${selectField("Category","category",EXPENSE_CATEGORIES,e.category)}${field("Amount","amount",e.amount,true,"number","0.01")}${field("Vendor","vendor",e.vendor)}${field("Description","description",e.description)}${field("Payment method","paymentMethod",e.paymentMethod)}
+      ${field("Date","date",e.date,true,"date")}${selectField("Category","category",expenseCategories,e.category)}${field("Amount","amount",e.amount,true,"number","0.01")}${field("Vendor","vendor",e.vendor)}${field("Description","description",e.description)}${field("Payment method","paymentMethod",e.paymentMethod)}
       ${relationField("Related item","itemId",items.map(x=>[x.id,x.name]),e.itemId)}${relationField("Related event","eventId",events.map(x=>[x.id,x.title]),e.eventId)}${relationField("Related auction","auctionId",auctions.map(x=>[x.id,x.name]),e.auctionId)}${textareaField("Notes","notes",e.notes)}
       </div>
       <div class="record-section">
@@ -2398,7 +2437,7 @@ async function renderUserGuide(){
         <p><strong>Calendar:</strong> Fairs, festivals, pickups, sales and other events.</p>
         <p><strong>Money:</strong> Business overview, expenses, mileage, item sales and the Sales Register.</p>
         <p><strong>Auctions:</strong> Auction sourcing, watch lots, bidding plans and winning-item intake.</p>
-          <p><strong>More:</strong> Backups, CSV exports, payment methods, Archived Auctions, persistent storage and this User Guide.</p>
+          <p><strong>More:</strong> Backups, CSV exports, payment methods, custom expense categories, Archived Auctions, Receipt Archive, persistent storage and this User Guide.</p>
       </div>
     </section>
       <div class="section-head"><div><h3>Dashboard</h3><p>See the business at a glance and jump directly into the records behind the totals.</p></div></div>
@@ -2466,7 +2505,7 @@ async function renderUserGuide(){
 
       <div class="panel">
         <h3>Photos and Item History</h3>
-        <p>Add photos from the camera or gallery. Useful photos include front, back, serial number, damage, repairs and identifying details.</p>
+        <p>Add photos from the camera or gallery. Useful photos include front, back, serial number, damage, repairs and identifying details. From the item detail screen, click a product photo to open the full-size image viewer.</p>
         <p>Item notes can be added to the history from the item detail screen so important changes remain attached to that item.</p>
       </div>
         <div class="panel">
@@ -2563,9 +2602,9 @@ async function renderUserGuide(){
     <section class="grid-2">
       <div class="panel">
         <h3>Expenses</h3>
-        <p>Record operating expenses such as repairs, parts, booth fees, fuel, parking, shipping, packaging and advertising.</p>
+        <p>Record operating expenses such as repairs, parts, booth fees, fuel, parking, shipping, packaging and advertising. Use More → Expense categories to add custom categories used by the business. Built-in categories remain available, and a custom category that is still assigned to an expense cannot be removed until those expenses are changed.</p>
         <p>Inventory Purchase and Auction Premium costs attached to an item are treated as acquisition costs so they are not counted a second time as general expenses.</p>
-          <p>Receipt photos can be attached from the camera or gallery. Attached receipts stay with the expense record, can be opened in the receipt viewer and are included in full Organizer backups.</p>
+          <p>Receipt photos can be attached from the camera or gallery. Attached receipts stay with the expense record, can be opened in the receipt viewer and are included in full Organizer backups. Use More → Receipt Archive to browse saved receipts by From and To dates and expense category. Click a receipt card to open read-only Expense Details, click the receipt image for the full-size viewer, or choose Edit Expense when the record needs to be changed. Closing Expense Details returns to the Receipt Archive.</p>
           <p>The Expense Calculator filters by category and date range and shows the matching count and total. Use the report header when a business or accountant heading is needed.</p>
           <p>Print opens the formatted report and browser print dialog. Save PDF creates and downloads a real PDF directly, with the report header, summary, expense table and grand total. Expense reports can also be exported as CSV.</p>
       </div>
@@ -2595,7 +2634,7 @@ async function renderUserGuide(){
         <div class="panel">
           <h3>Watch Lots</h3>
           <p>Each auction can contain Watch Lots for individual items being considered. A Watch Lot stores its Item / lot URL, lot number, closing time, High/Medium/Low priority, outcome, expected resale, maximum bid, advertised condition and notes.</p>
-          <p>Watch Lots appear directly on the main Auction cards with basic information including outcome, lot number, closing time, expected resale and maximum bid. Click the lot card for full Lot Details. Open Listing opens the exact item listing.</p>
+          <p>Watch Lots appear directly on the main Auction cards with basic information including outcome, lot number, closing time, expected resale and maximum bid. Click the lot card for full Lot Details. Open Listing opens the exact item listing. When an auction has more Watch Lots than the preview shows, the + more watched lots link opens the full auction record.</p>
           <p>The next action appears where the work is happening: Update Outcome for Watching, Catalog Item for a Won lot, or View Inventory Item after cataloging.</p>
         </div>
         <div class="panel">
@@ -2607,7 +2646,7 @@ async function renderUserGuide(){
         <div class="panel">
           <h3>Archived Auctions</h3>
           <p>After every Watch Lot in an ended auction is resolved as Not Won or Cataloged, the auction leaves the active Auctions screen automatically. An ended auction with no Watch Lots also archives automatically.</p>
-          <p>Use More → Archived Auctions to review retained auction history, Watch Lot outcomes, listing links, bids and connected Inventory items. Archiving keeps the business record; it does not delete it.</p>
+          <p>Use More → Archived Auctions to review retained auction history, Watch Lot outcomes, listing links, bids and connected Inventory items. Filter the archive with optional From and To dates, Auction type and Platform / site. Leaving both dates blank shows all dates; using the same From and To date shows one day. Open an archived auction for its read-only history; closing that detail view returns to Archived Auctions. Archiving keeps the business record; it does not delete it.</p>
         </div>
     </section>
 
@@ -2705,7 +2744,7 @@ async function renderUserGuide(){
 }
 
 
-async function openArchivedAuctionDetail(id){
+async function openArchivedAuctionDetail(id,returnToArchivedAuctions=false){
   const auction=await DB.getOne("auctions",id);if(!auction)return;
   const allLots=await DB.getAll("auctionLots");
   const lots=allLots.filter(l=>l.auctionId===id).sort((a,b)=>String(a.endDateTime||"9999-12-31T23:59").localeCompare(String(b.endDateTime||"9999-12-31T23:59")));
@@ -2724,6 +2763,15 @@ async function openArchivedAuctionDetail(id){
       <div class="list">${lots.length?lots.map(l=>{const outcome=lotOutcome(l);return `<div class="list-card archived-lot-card"><div><div class="auction-card-topline"><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><span class="auction-priority auction-priority-small priority-${String(l.priority||"Medium").toLowerCase()}">${esc(l.priority||"Medium")} Priority</span></div><h4>${esc(l.name||"Untitled lot")}</h4><p>Lot ${esc(l.lotNumber||"—")} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-archived-lot-listing="${l.id}">Open Listing</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-archived-inventory="${l.id}">View Inventory Item</button>`:""}</div></div>`;}).join(""):empty("No watched lots were recorded.")}</div>
     </div>
     <div class="modal-actions">${auction.website?`<button class="btn secondary" id="archivedAuctionWebsite" type="button">Open Auction Page</button>`:""}<button class="btn" data-close type="button">Done</button></div>`);
+  if(returnToArchivedAuctions){
+    $$("[data-close]",modalRoot).forEach(button=>{
+      button.onclick=()=>{
+        closeModal();
+        openArchivedAuctions();
+      };
+    });
+  }
+
   const website=$("#archivedAuctionWebsite");
   if(website)website.onclick=()=>openExternalUrl(auction.website,"auction page");
   $$("[data-archived-lot-listing]",modalRoot).forEach(b=>b.onclick=()=>{const lot=lots.find(l=>l.id===b.dataset.archivedLotListing);if(lot&&lot.listingUrl)openExternalUrl(lot.listingUrl,"lot listing");});
@@ -2733,14 +2781,397 @@ async function openArchivedAuctionDetail(id){
 async function openArchivedAuctions(){
   const [auctions,lots]=await Promise.all([DB.getAll("auctions"),DB.getAll("auctionLots")]);
   const archived=auctions.filter(a=>isAuctionEnded(a)&&!auctionNeedsAttention(a,lots)).sort((a,b)=>auctionEndTimestamp(b)-auctionEndTimestamp(a));
+  const archivedPlatforms=[...new Set(archived.map(a=>String(a.platform||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   openModal(`
     <div class="modal-head"><div><div class="eyebrow">HISTORY</div><h2>Archived Auctions</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <div class="modal-body">
       <p style="color:var(--muted);line-height:1.55">Ended auctions move here automatically after their Watch Lots are resolved. Historical records are retained.</p>
+<div class="archive-filter-panel">          <div class="archive-filter-grid archive-filter-grid-4">            <div class="field"><label>From</label><input class="input" id="archivedAuctionFrom" type="date"></div>            <div class="field"><label>To</label><input class="input" id="archivedAuctionTo" type="date"></div>            <div class="field"><label>Auction type</label><select class="input" id="archivedAuctionType"><option value="all">All Types</option><option value="Online">Online</option><option value="In Person">In Person</option></select></div>            <div class="field"><label>Platform / site</label><select class="input" id="archivedAuctionPlatform"><option value="all">All Platforms</option>${archivedPlatforms.map(platform=>`<option value="${esc(platform)}">${esc(platform)}</option>`).join("")}</select></div>          </div>          <div class="archive-filter-summary" id="archivedAuctionMatchCount"></div>        </div>
       <div class="list">${archived.length?archived.map(a=>{const rows=lots.filter(l=>l.auctionId===a.id);return `<div class="list-card archived-auction-card" data-archived-auction="${a.id}"><div><div class="badge">Auction Over</div><h4>${esc(a.name||"Auction")}</h4><p>${esc(a.endDateTime?prettyDateTime(a.endDateTime):prettyDate(a.date))}${a.platform?` · ${esc(a.platform)}`:""} · ${rows.length} watched lot${rows.length===1?"":"s"}</p></div><button class="btn secondary small" type="button">View</button></div>`;}).join(""):empty("No archived auctions yet.")}</div>
     </div>
     <div class="modal-actions"><button class="btn" data-close type="button">Done</button></div>`);
-  $$("[data-archived-auction]",modalRoot).forEach(row=>row.onclick=()=>openArchivedAuctionDetail(row.dataset.archivedAuction));
+const archivedAuctionDateMatches=value=>{    const from=$("#archivedAuctionFrom").value;    const to=$("#archivedAuctionTo").value;    if(!from&&!to)return true;    const dateValue=String(value||"").slice(0,10);    if(!dateValue)return false;    if(from&&dateValue<from)return false;    if(to&&dateValue>to)return false;    return true;  };  const updateArchivedAuctionFilters=()=>{    const type=$("#archivedAuctionType").value;    const platform=$("#archivedAuctionPlatform").value;    let matches=0;    $$("[data-archived-auction]",modalRoot).forEach(row=>{      const auction=archived.find(a=>a.id===row.dataset.archivedAuction);      const dateValue=auction?.endDateTime||auction?.date||"";      const typeMatch=type==="all"||String(auction?.auctionMode||"Online")===type;      const platformValue=String(auction?.platform||"").trim();      const platformMatch=platform==="all"||platformValue===platform;      const visible=!!auction&&typeMatch&&platformMatch&&archivedAuctionDateMatches(dateValue);      row.hidden=!visible;      if(visible)matches++;    });    $("#archivedAuctionMatchCount").textContent=`${matches} of ${archived.length} archived auction${archived.length===1?"":"s"}`;  };  ["archivedAuctionFrom","archivedAuctionTo","archivedAuctionType","archivedAuctionPlatform"].forEach(id=>{    const control=$("#"+id);    if(control)control.onchange=updateArchivedAuctionFilters;  });  updateArchivedAuctionFilters();
+
+  $$("[data-archived-auction]",modalRoot).forEach(row=>row.onclick=()=>openArchivedAuctionDetail(row.dataset.archivedAuction,true));
+}
+
+async function openExpenseDetail(id,returnToReceiptArchive=false){
+  const expense=await DB.getOne("expenses",id);
+  if(!expense)return;
+
+  const [items,events,auctions,attachments]=await Promise.all([
+    DB.getAll("items"),
+    DB.getAll("events"),
+    DB.getAll("auctions"),
+    DB.getByIndex("attachments","ownerId",id)
+  ]);
+
+  const receipts=attachments.filter(attachment=>attachment.ownerType==="expense"&&attachment.blob);
+  const item=items.find(row=>row.id===expense.itemId);
+  const event=events.find(row=>row.id===expense.eventId);
+  const auction=auctions.find(row=>row.id===expense.auctionId);
+
+  openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">EXPENSE</div><h2>${esc(expense.vendor||expense.description||"Expense Details")}</h2></div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+    <div class="modal-body">
+      <section class="stats" style="grid-template-columns:repeat(2,1fr);margin:0 0 14px">
+        ${stat("Amount",money(expense.amount),"")}
+        ${stat("Date",prettyDate(expense.date),"")}
+      </section>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Expense Details</h3>
+          ${kv("Category",expense.category)}
+          ${kv("Vendor",expense.vendor)}
+          ${kv("Description",expense.description)}
+          ${kv("Payment method",expense.paymentMethod)}
+        </div>
+        <div class="panel">
+          <h3>Connections</h3>
+          ${kv("Related item",item?.name)}
+          ${kv("Related event",event?.title)}
+          ${kv("Related auction",auction?.name)}
+        </div>
+      </div>
+      ${expense.notes?`<div class="panel"><h3>Notes</h3><p>${nl2br(expense.notes)}</p></div>`:""}
+      <div class="record-section">
+        <div class="record-section-title"><span>🧾</span><div><strong>Receipts</strong><small>${receipts.length} attached receipt${receipts.length===1?"":"s"}</small></div></div>
+        <div class="photo-strip">${receipts.length?receipts.map(receipt=>`<div class="photo-thumb"><img data-expense-detail-receipt="${esc(receipt.id)}" alt="Receipt" title="View receipt"></div>`).join(""):empty("No receipts attached.")}</div>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn secondary" id="editExpenseDetail" type="button">Edit Expense</button><button class="btn" data-close type="button">Done</button></div>
+  `);
+
+  receipts.forEach(receipt=>{
+    const image=modalRoot.querySelector(`[data-expense-detail-receipt="${receipt.id}"]`);
+    if(image&&receipt.blob){
+      const url=URL.createObjectURL(receipt.blob);
+      image.src=url;
+      image.onload=()=>URL.revokeObjectURL(url);
+    }
+  });
+
+  $$("[data-expense-detail-receipt]",modalRoot).forEach(image=>{
+    image.onclick=()=>{
+      const receipt=receipts.find(row=>row.id===image.dataset.expenseDetailReceipt);
+      if(!receipt||!receipt.blob)return;
+
+      const url=URL.createObjectURL(receipt.blob);
+      const viewer=document.createElement("div");
+      viewer.className="receipt-viewer";
+
+      const panel=document.createElement("div");
+      panel.className="receipt-viewer-panel";
+
+      const closeButton=document.createElement("button");
+      closeButton.type="button";
+      closeButton.className="receipt-viewer-close";
+      closeButton.setAttribute("aria-label","Close receipt viewer");
+      closeButton.textContent="×";
+
+      const fullImage=document.createElement("img");
+      fullImage.src=url;
+      fullImage.alt="Receipt";
+
+      const closeViewer=()=>{
+        URL.revokeObjectURL(url);
+        viewer.remove();
+      };
+
+      closeButton.onclick=closeViewer;
+      viewer.onclick=event=>{
+        if(event.target===viewer)closeViewer();
+      };
+
+      panel.appendChild(closeButton);
+      panel.appendChild(fullImage);
+      viewer.appendChild(panel);
+      modalRoot.appendChild(viewer);
+    };
+  });
+
+  if(returnToReceiptArchive){
+    $$("[data-close]",modalRoot).forEach(button=>{
+      button.onclick=()=>{
+        closeModal();
+        openReceiptArchive();
+      };
+    });
+  }
+
+  $("#editExpenseDetail").onclick=()=>{
+    closeModal();
+    openExpenseModal(expense);
+  };
+}
+
+async function openReceiptArchive(){
+  const [expenses,attachments]=await Promise.all([DB.getAll("expenses"),DB.getAll("attachments")]);
+  const expenseMap=new Map(expenses.map(expense=>[expense.id,expense]));
+  const receipts=attachments
+    .filter(attachment=>attachment.ownerType==="expense" && attachment.blob && expenseMap.has(attachment.ownerId))
+    .sort((a,b)=>{
+      const expenseA=expenseMap.get(a.ownerId);
+      const expenseB=expenseMap.get(b.ownerId);
+      return String(expenseB?.date||b.createdAt||"").localeCompare(String(expenseA?.date||a.createdAt||""));
+    });
+
+  const receiptCategories=[...new Set(receipts.map(receipt=>String(expenseMap.get(receipt.ownerId)?.category||"Uncategorized")))].sort((a,b)=>a.localeCompare(b));
+  openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">EXPENSE HISTORY</div><h2>Receipt Archive</h2></div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);line-height:1.55">Browse receipt photos saved with expense records. Open the connected Expense to edit the record or manage its attachments.</p>
+<div class="archive-filter-panel">        <div class="archive-filter-grid">          <div class="field"><label>From</label><input class="input" id="receiptArchiveFrom" type="date"></div>          <div class="field"><label>To</label><input class="input" id="receiptArchiveTo" type="date"></div>          <div class="field"><label>Expense category</label><select class="input" id="receiptArchiveCategory"><option value="all">All Categories</option>${receiptCategories.map(category=>`<option value="${esc(category)}">${esc(category)}</option>`).join("")}</select></div>        </div>        <div class="archive-filter-summary" id="receiptArchiveMatchCount"></div>      </div>
+      <div class="receipt-archive-grid">
+        ${receipts.length?receipts.map(receipt=>{
+          const expense=expenseMap.get(receipt.ownerId);
+          return `<div class="receipt-archive-card" data-receipt-archive-card="${esc(receipt.id)}">
+            <button class="receipt-archive-photo" type="button" data-archive-receipt="${esc(receipt.id)}" aria-label="View receipt">
+              <img data-archive-receipt-image="${esc(receipt.id)}" alt="Receipt">
+            </button>
+            <div class="receipt-archive-info">
+              <div class="receipt-archive-topline"><strong>${esc(expense?.vendor||expense?.description||"Expense")}</strong><strong>${money(expense?.amount)}</strong></div>
+              <p>${esc(prettyDate(expense?.date)||"No date")} · ${esc(expense?.category||"Uncategorized")}</p>
+              ${expense?.description?`<p>${esc(expense.description)}</p>`:""}
+              <button class="btn secondary small" type="button" data-receipt-expense-id="${esc(expense.id)}">Edit Expense</button>
+            </div>
+          </div>`;
+        }).join(""):empty("No saved expense receipts yet.")}
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn" data-close type="button">Done</button></div>
+  `);
+
+const receiptArchiveDateMatches=value=>{    const from=$("#receiptArchiveFrom").value;    const to=$("#receiptArchiveTo").value;    if(!from&&!to)return true;    const dateValue=String(value||"").slice(0,10);    if(!dateValue)return false;    if(from&&dateValue<from)return false;    if(to&&dateValue>to)return false;    return true;  };  const updateReceiptArchiveFilters=()=>{    const category=$("#receiptArchiveCategory").value;    let matches=0;    $$("[data-receipt-archive-card]",modalRoot).forEach(card=>{      const receipt=receipts.find(row=>row.id===card.dataset.receiptArchiveCard);      const expense=receipt?expenseMap.get(receipt.ownerId):null;      const categoryValue=String(expense?.category||"Uncategorized");      const categoryMatch=category==="all"||categoryValue===category;      const visible=!!receipt&&!!expense&&categoryMatch&&receiptArchiveDateMatches(expense.date);      card.hidden=!visible;      if(visible)matches++;    });    $("#receiptArchiveMatchCount").textContent=`${matches} of ${receipts.length} receipt${receipts.length===1?"":"s"}`;  };  ["receiptArchiveFrom","receiptArchiveTo","receiptArchiveCategory"].forEach(id=>{    const control=$("#"+id);    if(control)control.onchange=updateReceiptArchiveFilters;  });  updateReceiptArchiveFilters();
+
+  receipts.forEach(receipt=>{
+    const image=modalRoot.querySelector(`[data-archive-receipt-image="${receipt.id}"]`);
+    if(image&&receipt.blob){
+      const url=URL.createObjectURL(receipt.blob);
+      image.src=url;
+      image.onload=()=>URL.revokeObjectURL(url);
+    }
+  });
+
+  $$("[data-archive-receipt]",modalRoot).forEach(button=>{
+button.onclick=event=>{      event.stopPropagation();
+      const receipt=receipts.find(row=>row.id===button.dataset.archiveReceipt);
+      if(!receipt||!receipt.blob)return;
+
+      const url=URL.createObjectURL(receipt.blob);
+      const viewer=document.createElement("div");
+      viewer.className="receipt-viewer";
+
+      const panel=document.createElement("div");
+      panel.className="receipt-viewer-panel";
+
+      const closeButton=document.createElement("button");
+      closeButton.type="button";
+      closeButton.className="receipt-viewer-close";
+      closeButton.setAttribute("aria-label","Close receipt viewer");
+      closeButton.textContent="×";
+
+      const fullImage=document.createElement("img");
+      fullImage.src=url;
+      fullImage.alt="Receipt";
+
+      const closeViewer=()=>{
+        URL.revokeObjectURL(url);
+        viewer.remove();
+      };
+
+      closeButton.onclick=closeViewer;
+      viewer.onclick=event=>{
+        if(event.target===viewer)closeViewer();
+      };
+
+      panel.appendChild(closeButton);
+      panel.appendChild(fullImage);
+      viewer.appendChild(panel);
+      modalRoot.appendChild(viewer);
+    };
+  });
+
+  $$("[data-receipt-archive-card]",modalRoot).forEach(card=>{
+    card.onclick=()=>{
+      const receipt=receipts.find(row=>row.id===card.dataset.receiptArchiveCard);
+      const expense=receipt?expenseMap.get(receipt.ownerId):null;
+      if(expense)openExpenseDetail(expense.id,true);
+    };
+  });
+
+  $$("[data-receipt-expense-id]",modalRoot).forEach(button=>{
+button.onclick=event=>{      event.stopPropagation();
+      const expense=expenseMap.get(button.dataset.receiptExpenseId);
+      if(!expense)return;
+      closeModal();
+      openExpenseModal(expense);
+    };
+  });
+}
+
+async function getExpenseCategories(expensesSeed){
+  const row=await DB.getOne("settings","expenseCategories");
+  const expenses=Array.isArray(expensesSeed)?expensesSeed:await DB.getAll("expenses");
+
+  const custom=Array.isArray(row?.value)
+    ? row.value.map(value=>String(value||"").trim()).filter(Boolean)
+    : [];
+
+  const used=expenses
+    .map(expense=>String(expense.category||"").trim())
+    .filter(Boolean);
+
+  const additional=[...custom,...used]
+    .filter(value=>!EXPENSE_CATEGORIES.some(category=>category.toLowerCase()===value.toLowerCase()))
+    .filter((value,index,array)=>array.findIndex(other=>other.toLowerCase()===value.toLowerCase())===index)
+    .sort((a,b)=>a.localeCompare(b));
+
+  return [...EXPENSE_CATEGORIES,...additional];
+}
+
+async function openExpenseCategoriesModal(){
+  const [row,expenses]=await Promise.all([
+    DB.getOne("settings","expenseCategories"),
+    DB.getAll("expenses")
+  ]);
+
+  let custom=Array.isArray(row?.value)
+    ? row.value.map(value=>String(value||"").trim()).filter(Boolean)
+    : [];
+
+  openModal(`
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">EXPENSES</div>
+        <h2>Expense Categories</h2>
+      </div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="panel">
+        <h3>Built-in categories</h3>
+        <p style="color:var(--muted);line-height:1.55">${EXPENSE_CATEGORIES.map(esc).join(" · ")}</p>
+      </div>
+
+      <div class="record-section">
+        <div class="record-section-title">
+          <span>🧾</span>
+          <div>
+            <strong>Custom expense categories</strong>
+            <small>Add categories used by this business. Categories currently assigned to expenses cannot be removed.</small>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label>New expense category</label>
+            <input class="input" id="newExpenseCategory" autocomplete="off" placeholder="Example: Equipment Rental">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn" id="addExpenseCategory" type="button">Add Category</button>
+          </div>
+        </div>
+
+        <div class="list" id="customExpenseCategoryList"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" data-close type="button">Done</button>
+    </div>
+  `);
+
+  const input=$("#newExpenseCategory");
+  const list=$("#customExpenseCategoryList");
+
+  const save=()=>DB.put("settings",{
+    key:"expenseCategories",
+    value:custom,
+    updatedAt:new Date().toISOString()
+  });
+
+  const usageCount=name=>expenses.filter(expense=>
+    String(expense.category||"").trim().toLowerCase()===name.toLowerCase()
+  ).length;
+
+  const renderList=()=>{
+    list.innerHTML=custom.length
+      ? custom.map((name,index)=>{
+          const count=usageCount(name);
+          return `
+            <div class="list-card">
+              <div>
+                <strong>${esc(name)}</strong>
+                <p>${count} expense record${count===1?"":"s"}</p>
+              </div>
+              <button class="btn danger small" type="button" data-remove-expense-category="${index}">Remove</button>
+            </div>
+          `;
+        }).join("")
+      : empty("No custom expense categories yet.");
+
+    $$("[data-remove-expense-category]",list).forEach(button=>{
+      button.onclick=async()=>{
+        const index=Number(button.dataset.removeExpenseCategory);
+        const name=custom[index];
+
+        if(usageCount(name)>0){
+          alert("That expense category is currently used by expense records. Change those expenses before removing it.");
+          return;
+        }
+
+        custom.splice(index,1);
+        await save();
+        renderList();
+        toast("Expense category removed.");
+      };
+    });
+  };
+
+  const addCategory=async()=>{
+    const name=String(input.value||"").trim();
+    if(!name)return;
+
+    const used=expenses
+      .map(expense=>String(expense.category||"").trim())
+      .filter(Boolean);
+
+    const known=[...EXPENSE_CATEGORIES,...custom,...used];
+
+    if(known.some(value=>value.toLowerCase()===name.toLowerCase())){
+      alert("That expense category already exists.");
+      input.select();
+      return;
+    }
+
+    custom.push(name);
+    custom=custom.sort((a,b)=>a.localeCompare(b));
+    await save();
+    input.value="";
+    renderList();
+    input.focus();
+    toast("Expense category added.");
+  };
+
+  $("#addExpenseCategory").onclick=addCategory;
+
+  input.onkeydown=event=>{
+    if(event.key==="Enter"){
+      event.preventDefault();
+      addCategory();
+    }
+  };
+
+  renderList();
 }
 
 async function renderMore(){
@@ -2761,6 +3192,11 @@ async function renderMore(){
         <p style="color:var(--muted);line-height:1.55">Photos are compressed before local storage. Persistent browser storage is requested where supported.</p>
         <button class="btn ghost" id="requestStorage">Request Persistent Storage</button>
       </div>
+  <div class="panel">
+    <h3>Expense categories</h3>
+    <p style="color:var(--muted);line-height:1.55">Manage custom categories available when recording and filtering business expenses.</p>
+    <button class="btn secondary" id="manageExpenseCategories">Manage Expense Categories</button>
+  </div>
 <div class="panel">
   <h3>Payment methods</h3>
   <p style="color:var(--muted);line-height:1.55">Manage the payment methods available in the Sales Register dropdown.</p>
@@ -2771,6 +3207,11 @@ async function renderMore(){
       <p style="color:var(--muted);line-height:1.55">Review ended auctions after their Watch Lots are resolved.</p>
       <button class="btn secondary" id="openArchivedAuctions">Open Archived Auctions</button>
     </div>
+      <div class="panel">
+        <h3>Receipt Archive</h3>
+        <p style="color:var(--muted);line-height:1.55">Browse saved expense receipts and open the connected expense record.</p>
+        <button class="btn secondary" id="openReceiptArchive">Open Receipt Archive</button>
+      </div>
     <div class="panel">
       <h3>User Guide</h3>
       <p style="color:var(--muted);line-height:1.55">Instructions for inventory, sales, calendar, money, backups and everyday business workflows.</p>
@@ -2781,8 +3222,10 @@ async function renderMore(){
   $("#exportBackup").onclick=exportBackup;
   $("#importBackup").onchange=importBackupFile;
   $$("[data-csv]").forEach(b=>b.onclick=()=>exportCSV(b.dataset.csv));
+  $("#manageExpenseCategories").onclick=()=>openExpenseCategoriesModal();
   $("#managePaymentMethods").onclick=()=>openPaymentMethodsModal();
   $("#openArchivedAuctions").onclick=()=>openArchivedAuctions();
+  $("#openReceiptArchive").onclick=()=>openReceiptArchive();
   $("#openUserGuide").onclick=()=>navigate("guide");
   $("#requestStorage").onclick=async()=>toast((await DB.requestPersistentStorage())?"Persistent storage granted.":"Persistent storage not granted or unsupported.");
 }
@@ -3376,7 +3819,7 @@ async function renderAuctionManager(){
               <p><strong>${esc(timeLabel)}</strong>${a.platform?` · ${esc(a.platform)}`:""}${a.location?` · ${esc(a.location)}`:""} · ${watchedLots} watched lot${watchedLots===1?"":"s"}</p>
               ${conflict?`<div class="auction-conflict-note">⚠ Time Conflict — another tracked auction closes within 15 minutes. Use Priority to decide which needs attention first.</div>`:""}
               ${isAuctionEnded(a)&&auctionNeedsAttention(a,lots)?`<div class="auction-needs-attention">Auction Over · Needs Attention — finish the outcome or catalog any won lots before this auction moves to Archived Auctions.</div>`:""}
-              ${previewLots.length?`<div class="auction-lot-preview">${previewLots.map(l=>{const lotPriority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?new Date(l.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"Time not set";const lotConflict=lotConflictIds.has(l.id);const outcome=lotOutcome(l);return `<div data-lot-preview-detail="${l.id}" class="auction-lot-preview-row ${lotConflict?"lot-time-conflict":""}"><div><span class="auction-priority auction-priority-small priority-${lotPriority.toLowerCase()}">${esc(lotPriority)}</span><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><strong>${esc(l.name||"Untitled lot")}</strong><small>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)}${lotConflict?" · Time Conflict":""}<br>Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</small></div><div class="auction-lot-preview-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:`<span class="auction-lot-missing">URL missing</span>`}${outcome==="Watching"?`<button class="btn secondary small" type="button" data-lot-update="${l.id}">Update Outcome</button>`:""}${outcome==="Won"&&!l.inventoryItemId?`<button class="btn small" type="button" data-lot-catalog="${l.id}">Catalog Item</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-lot-inventory="${l.id}">View Inventory Item</button>`:""}</div></div>`;}).join("")}${auctionLots.length>3?`<div class="auction-lot-more">+ ${auctionLots.length-3} more watched lot${auctionLots.length-3===1?"":"s"}</div>`:""}</div>`:""}
+              ${previewLots.length?`<div class="auction-lot-preview">${previewLots.map(l=>{const lotPriority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?new Date(l.endDateTime).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"Time not set";const lotConflict=lotConflictIds.has(l.id);const outcome=lotOutcome(l);return `<div data-lot-preview-detail="${l.id}" class="auction-lot-preview-row ${lotConflict?"lot-time-conflict":""}"><div><span class="auction-priority auction-priority-small priority-${lotPriority.toLowerCase()}">${esc(lotPriority)}</span><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span><strong>${esc(l.name||"Untitled lot")}</strong><small>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)}${lotConflict?" · Time Conflict":""}<br>Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</small></div><div class="auction-lot-preview-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:`<span class="auction-lot-missing">URL missing</span>`}${outcome==="Watching"?`<button class="btn secondary small" type="button" data-lot-update="${l.id}">Update Outcome</button>`:""}${outcome==="Won"&&!l.inventoryItemId?`<button class="btn small" type="button" data-lot-catalog="${l.id}">Catalog Item</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-lot-inventory="${l.id}">View Inventory Item</button>`:""}</div></div>`;}).join("")}${auctionLots.length>3?`<button class="auction-lot-more" type="button" data-auction-id="${a.id}">+ ${auctionLots.length-3} more watched lot${auctionLots.length-3===1?"":"s"}</button>`:""}</div>`:""}
             </div>
             <button class="btn secondary small" data-auction-id="${a.id}">Open</button>
           </div>`;
