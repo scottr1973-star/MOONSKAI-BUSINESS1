@@ -3232,6 +3232,11 @@ async function renderMore(){
       <p style="color:var(--muted);line-height:1.55">Instructions for inventory, sales, calendar, money, backups and everyday business workflows.</p>
       <button class="btn secondary" id="openUserGuide">Open User Guide</button>
     </div>
+    <div class="panel">
+      <h3>Open Source Licenses</h3>
+      <p style="color:var(--muted);line-height:1.55">Licenses and attribution notices for third-party software included with the Organizer.</p>
+      <button class="btn secondary" id="openSourceLicenses" type="button">Open Source Licenses</button>
+    </div>
     </section>
   `;
   $("#exportBackup").onclick=exportBackup;
@@ -3242,6 +3247,7 @@ async function renderMore(){
   $("#openArchivedAuctions").onclick=()=>openArchivedAuctions();
   $("#openReceiptArchive").onclick=()=>openReceiptArchive();
   $("#openUserGuide").onclick=()=>navigate("guide");
+  $("#openSourceLicenses").onclick=openOpenSourceLicenses;
   $("#requestStorage").onclick=async()=>toast((await DB.requestPersistentStorage())?"Persistent storage granted.":"Persistent storage not granted or unsupported.");
 }
 async function getStorageLocations(){
@@ -4281,6 +4287,80 @@ async function compressImage(file,maxDim=1600,quality=.82){
   canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
   canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);if(bitmap.close)bitmap.close();
   return await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",quality));
+}
+
+function openOpenSourceLicenses(){
+  openModal(`
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">LEGAL</div>
+        <h2>Open Source Licenses</h2>
+      </div>
+      <button class="close-btn" data-close type="button">×</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="margin-top:0;color:var(--muted);line-height:1.6">
+        Moonskai Business Organizer includes the following third-party open-source software.
+        These licenses apply to the listed third-party components only.
+      </p>
+
+      <div class="record-section">
+        <h3>bwip-js</h3>
+        <p><strong>License:</strong> MIT License</p>
+        <p>Copyright © 2011–2026 Mark Warren.</p>
+        <p>Includes Barcode Writer in Pure PostScript, Copyright © 2004–2024 Terry Burton.</p>
+      </div>
+
+      <div class="record-section">
+        <h3>jsPDF</h3>
+        <p><strong>License:</strong> MIT License</p>
+        <p>Copyright © 2010–2025 James Hall, yWorks GmbH, Lukas Holländer, and other contributors identified in the bundled jsPDF license header.</p>
+      </div>
+
+      <div class="record-section">
+        <h3>jsPDF-AutoTable</h3>
+        <p><strong>License:</strong> MIT License</p>
+        <p>Copyright © 2026 Simon Bengtsson.</p>
+      </div>
+
+      <div class="record-section">
+        <h3>@zxing/browser</h3>
+        <p><strong>License:</strong> MIT License</p>
+      </div>
+
+      <div class="record-section">
+        <h3>@zxing/library</h3>
+        <p><strong>License:</strong> Apache License 2.0</p>
+        <p><a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">View the Apache License 2.0 full text</a></p>
+      </div>
+
+      <details class="record-section">
+        <summary><strong>MIT License text</strong></summary>
+        <p style="white-space:pre-wrap;line-height:1.55">Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.</p>
+      </details>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" data-close type="button">Done</button>
+    </div>
+  `);
 }
 
 function openModal(html){
