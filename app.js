@@ -4088,73 +4088,7 @@ function openQuickActionSheet(){
 $("#qaSale").onclick=()=>{closeModal();openSaleRegisterModal();};
 }
 
-async function startCameraCapture(onCaptured,onCancelled){
-    const fallbackCapture=()=>{
-      if(!onCaptured){
-        $("#globalCameraInput").click();
-        return;
-      }
-      const input=document.createElement("input");
-      input.type="file";
-      input.accept="image/*";
-      input.setAttribute("capture","environment");
-      input.onchange=async event=>{
-        const files=Array.from(event.target.files||[]);
-        if(!files.length){
-          if(onCancelled)await onCancelled();
-          return;
-        }
-        const blobs=[];
-        for(const file of files)blobs.push(await compressImage(file));
-        await onCaptured(blobs);
-      };
-      input.click();
-    };
-  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext){
-    let stream=null;
-    try{
-      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
-      openModal(`
-        <div class="modal-head"><div><div class="eyebrow">CAMERA</div><h2>Take Photo</h2></div><button class="close-btn" id="cameraClose" type="button">×</button></div>
-        <div class="camera-stage">
-          <video id="liveCamera" autoplay playsinline muted></video>
-          <div class="camera-help">Fill the frame and take a clear photo.</div>
-        </div>
-        <div class="camera-controls">
-          <button class="btn secondary" id="cameraCancel" type="button">Cancel</button>
-          <button class="shutter" id="cameraShutter" type="button" aria-label="Take photo"><span></span></button>
-          <button class="btn ghost" id="cameraFallback" type="button">Phone Camera</button>
-        </div>
-      `);
-      const video=$("#liveCamera");
-      video.srcObject=stream;
-      const stop=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());};
-      const cancel=async()=>{stop();closeModal();if(onCancelled)await onCancelled();};
-      $("#cameraClose").onclick=cancel;
-      $("#cameraCancel").onclick=cancel;
-      $("#cameraFallback").onclick=()=>{stop();closeModal();fallbackCapture();};
-      $("#cameraShutter").onclick=async()=>{
-        if(!video.videoWidth){toast("Camera is still starting.");return;}
-        const canvas=document.createElement("canvas");
-        const maxDim=1800;
-        const scale=Math.min(1,maxDim/Math.max(video.videoWidth,video.videoHeight));
-        canvas.width=Math.round(video.videoWidth*scale);
-        canvas.height=Math.round(video.videoHeight*scale);
-        canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
-        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.86));
-        stop();closeModal();
-        if(blob){
-          if(onCaptured) await onCaptured([blob]);
-          else await quickCaptureFromBlobs([blob]);
-        }
-      };
-      return;
-    }catch(err){
-      if(stream)stream.getTracks().forEach(t=>t.stop());
-    }
-  }
-    fallbackCapture();
-}
+async function startCameraCapture(onCaptured,onCancelled,preferredDeviceId=""){const fallbackCapture=()=>{if(!onCaptured){$("#globalCameraInput").click();return;}const input=document.createElement("input");input.type="file";input.accept="image/*";input.setAttribute("capture","environment");input.onchange=async event=>{const files=Array.from(event.target.files||[]);if(!files.length){if(onCancelled)await onCancelled();return;}const blobs=[];for(const file of files)blobs.push(await compressImage(file));await onCaptured(blobs);};input.click();};if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.isSecureContext){let stream=null;let cameraTrack=null;let cameraCapabilities={};let torchOn=false;let finished=false;try{const videoConstraints=preferredDeviceId?{deviceId:{exact:preferredDeviceId},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}};stream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:false});openModal(`<div class="modal-head"><div><div class="eyebrow">CAMERA</div><h2>Take Photo</h2></div><button class="close-btn" id="cameraClose" type="button">X</button></div><div class="field" id="cameraCameraPicker" style="display:none;margin:0 14px 10px"><label>Camera</label><select class="select" id="cameraCameraSelect"></select><small style="color:var(--muted)">If one rear lens looks blurry, try another camera here.</small></div><div class="camera-stage" style="position:relative"><video id="liveCamera" autoplay playsinline muted></video><div style="position:absolute;left:10px;right:10px;bottom:42px;z-index:20;display:flex;justify-content:center;gap:8px;flex-wrap:wrap"><button class="btn secondary small" id="cameraTorchOverlay" type="button" disabled style="background:rgba(18,24,32,.92)">Light On</button><button class="btn secondary small" id="cameraRefocusOverlay" type="button" disabled style="background:rgba(18,24,32,.92)">Refocus</button></div><div class="camera-help" id="cameraStatus">Fill the frame and take a clear photo.</div></div><div class="camera-controls"><button class="btn secondary" id="cameraCancel" type="button">Cancel</button><button class="shutter" id="cameraShutter" type="button" aria-label="Take photo"><span></span></button><button class="btn ghost" id="cameraFallback" type="button">Phone Camera</button></div>`);const video=$("#liveCamera");const cameraPicker=$("#cameraCameraPicker");const cameraSelect=$("#cameraCameraSelect");const status=$("#cameraStatus");video.srcObject=stream;cameraTrack=stream.getVideoTracks&&stream.getVideoTracks()[0]?stream.getVideoTracks()[0]:null;const stop=()=>{if(cameraTrack&&torchOn){try{cameraTrack.applyConstraints({advanced:[{torch:false}]});}catch(err){}}torchOn=false;cameraTrack=null;cameraCapabilities={};if(stream){try{stream.getTracks().forEach(track=>track.stop());}catch(err){}stream=null;}if(video)video.srcObject=null;};const cancel=async()=>{if(finished)return;finished=true;stop();closeModal();if(onCancelled)await onCancelled();};const updateTorchButton=()=>{const button=$("#cameraTorchOverlay");if(!button)return;button.textContent=torchOn?"Light Off":"Light On";};const toggleTorch=async()=>{if(!cameraTrack||!cameraCapabilities.torch)return;try{torchOn=!torchOn;await cameraTrack.applyConstraints({advanced:[{torch:torchOn}]});updateTorchButton();status.textContent=torchOn?"Camera light is on. Hold the camera steady and avoid glare.":"Camera light is off. Hold the camera steady for a clear photo.";}catch(err){torchOn=false;updateTorchButton();console.warn("Camera torch control unavailable",err);status.textContent="This camera could not change the light setting.";}};const refocusCamera=async()=>{if(!cameraTrack)return;try{const modes=Array.isArray(cameraCapabilities.focusMode)?cameraCapabilities.focusMode:[];if(modes.includes("single-shot")){await cameraTrack.applyConstraints({advanced:[{focusMode:"single-shot"}]});status.textContent="Refocusing camera...";setTimeout(async()=>{try{if(cameraTrack&&modes.includes("continuous"))await cameraTrack.applyConstraints({advanced:[{focusMode:"continuous"}]});if(!finished)status.textContent="Camera refocused. Hold steady for a clear photo.";}catch(err){}},700);}else if(modes.includes("continuous")){await cameraTrack.applyConstraints({advanced:[{focusMode:"continuous"}]});status.textContent="Autofocus refreshed. Hold steady for a clear photo.";}else{status.textContent="This camera does not expose manual focus control.";}}catch(err){console.warn("Camera refocus unavailable",err);status.textContent="The camera could not be refocused manually.";}};$("#cameraClose").onclick=cancel;$("#cameraCancel").onclick=cancel;$("#cameraTorchOverlay").onclick=toggleTorch;$("#cameraRefocusOverlay").onclick=refocusCamera;$("#cameraFallback").onclick=()=>{if(finished)return;finished=true;stop();closeModal();fallbackCapture();};if(cameraTrack){try{const capabilities=typeof cameraTrack.getCapabilities==="function"?cameraTrack.getCapabilities():{};cameraCapabilities=capabilities;const torchButton=$("#cameraTorchOverlay");const refocusButton=$("#cameraRefocusOverlay");if(torchButton){torchButton.disabled=!capabilities.torch;torchButton.title=capabilities.torch?"Turn the rear camera light on or off":"Camera light control is not available on this device";}if(refocusButton){const modes=Array.isArray(capabilities.focusMode)?capabilities.focusMode:[];refocusButton.disabled=!(modes.includes("continuous")||modes.includes("single-shot"));}if(Array.isArray(capabilities.focusMode)&&capabilities.focusMode.includes("continuous"))await cameraTrack.applyConstraints({advanced:[{focusMode:"continuous"}]});const settings=typeof cameraTrack.getSettings==="function"?cameraTrack.getSettings():{};try{if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){const devices=(await navigator.mediaDevices.enumerateDevices()).filter(device=>device.kind==="videoinput");if(devices.length>1&&cameraPicker&&cameraSelect){const activeDeviceId=String(settings.deviceId||"");cameraSelect.innerHTML="";devices.forEach((device,index)=>{const option=document.createElement("option");option.value=device.deviceId;option.textContent=device.label||`Camera ${index+1}`;cameraSelect.appendChild(option);});if(activeDeviceId&&devices.some(device=>device.deviceId===activeDeviceId))cameraSelect.value=activeDeviceId;cameraPicker.style.display="block";cameraSelect.onchange=()=>{const nextDeviceId=String(cameraSelect.value||"");if(!nextDeviceId||nextDeviceId===activeDeviceId)return;finished=true;stop();closeModal();startCameraCapture(onCaptured,onCancelled,nextDeviceId);};}}}catch(err){console.warn("Camera enumeration unavailable",err);}if(settings.width&&settings.height)status.textContent=`Camera ready: ${settings.width} x ${settings.height}${settings.focusMode?` - Focus: ${settings.focusMode}`:""}.`;}catch(err){console.warn("Camera focus enhancement unavailable",err);}}$("#cameraShutter").onclick=async()=>{if(finished)return;if(!video.videoWidth){toast("Camera is still starting.");return;}const canvas=document.createElement("canvas");const maxDim=1800;const scale=Math.min(1,maxDim/Math.max(video.videoWidth,video.videoHeight));canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.86));finished=true;stop();closeModal();if(blob){if(onCaptured)await onCaptured([blob]);else await quickCaptureFromBlobs([blob]);}};return;}catch(err){if(stream)stream.getTracks().forEach(track=>track.stop());}}fallbackCapture();}
 
 async function quickCaptureFromFile(file){
   await quickCaptureFromFiles([file]);
