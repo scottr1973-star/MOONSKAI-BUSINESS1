@@ -1244,8 +1244,9 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
       ];
     });
 
+      const expensePurchaseEntriesAll=expensePurchaseEntries(expenses);const expensePurchaseRows=buildExpensePurchaseIntelligence(expenses);const expensePurchaseCategories=[...new Set(expensePurchaseEntriesAll.map(row=>row.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b));const expensePurchaseCategoryTotals=expensePurchaseCategories.map(category=>{const rows=expensePurchaseEntriesAll.filter(row=>row.category===category);return{category,total:sum(rows.map(row=>row.total)),quantity:sum(rows.map(row=>row.quantity))}});
     $("#moneyContent").innerHTML=`
-      <div class="section-head"><div><h3>Expenses</h3></div></div>
+        <div class="section-head"><div><h3>Expenses</h3></div><button class="btn secondary small" id="expenseQuickCalculatorBtn" type="button">Calculator</button></div>
 
       <div class="panel expense-calculator" id="expenseCalculator">
         <div class="section-head">
@@ -1319,10 +1320,12 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
         </div>
       </div>
 
+        <div class="panel" id="expensePurchasingIntelligence" style="margin:0 0 18px"><div class="section-head"><div><h3>Purchasing Intelligence</h3><p style="margin:4px 0 0;color:var(--muted);line-height:1.45">Itemized spending, purchase history and estimated reorder timing.</p></div><div class="field" style="margin:0;min-width:180px"><label>Item category</label><select class="select" id="expensePurchaseCategoryFilter"><option value="all">All categories</option>${expensePurchaseCategories.map(category=>`<option value="${esc(category)}">${esc(category)}</option>`).join("")}</select></div></div><section class="stats" style="margin:12px 0">${stat("Tracked Item Spend",money(sum(expensePurchaseEntriesAll.map(row=>row.total))),"business items before calculated tax")}${stat("Tracked Products",String(expensePurchaseRows.length),"repeat items grouped together")}${stat("Reorder Due",String(expensePurchaseRows.filter(row=>row.due).length),"history or manual interval")}</section><div class="section-head" style="margin-top:18px"><div><h4>Category Totals</h4></div></div><div class="expense-category-grid" style="margin-top:10px">${expensePurchaseCategoryTotals.length?expensePurchaseCategoryTotals.map(group=>`<div class="expense-category-option" style="display:block;cursor:default"><strong>${esc(group.category)}</strong><small style="display:block;color:var(--muted);margin-top:4px">${money(group.total)} - Qty ${group.quantity}</small></div>`).join(""):`<div class="muted">Add itemized purchases to build category totals.</div>`}</div><div class="section-head" style="margin-top:18px"><div><h4>Item Purchase History</h4><p id="expensePurchaseMatchSummary" style="margin:4px 0 0;color:var(--muted)"></p></div></div><div class="list">${expensePurchaseRows.length?expensePurchaseRows.map(row=>`<div class="list-card" data-expense-purchase-row data-expense-purchase-category="${esc(row.category)}"><div><h4>${esc(row.name)}</h4><p>${row.identifier?`ID: ${esc(row.identifier)} - `:""}${esc(row.category)}${row.vendor?` - ${esc(row.vendor)}`:""}<br>${row.purchaseCount} purchase${row.purchaseCount===1?"":"s"} - Qty ${row.totalQty} - Total ${money(row.totalSpend)}<br>Average unit ${money(row.averageUnitCost)} - Latest ${money(row.latestUnitCost)}${row.lastPurchase?` - Last ${esc(prettyDate(row.lastPurchase))}`:""}${row.averageInterval?` - Average ${row.averageInterval} days between purchases`:""}${row.manualReorder?` - Manual reorder ${row.manualReorder} days`:""}${row.nextPurchase?`<br><strong class="${row.due?"kpi-negative":""}">${row.due?"Reorder due":"Estimated next purchase"}: ${esc(prettyDate(row.nextPurchase))}</strong>`:""}</p></div></div>`).join(""):`<div class="muted">No itemized purchase history yet.</div>`}</div></div>
       <div class="section-head expense-records-head"><div><h3>Expense Records</h3></div></div>
       ${table(["Date","Category","Vendor","Description","Amount","Receipts",""],expenseRows)}
     `;
 
+      $("#expenseQuickCalculatorBtn").onclick=openExpenseQuickCalculator;const expensePurchaseCategoryFilter=$("#expensePurchaseCategoryFilter");const updateExpensePurchaseFilter=()=>{const selected=expensePurchaseCategoryFilter.value;let visible=0;$$("[data-expense-purchase-row]",$("#expensePurchasingIntelligence")).forEach(row=>{const show=selected==="all"||row.dataset.expensePurchaseCategory===selected;row.hidden=!show;if(show)visible++});$("#expensePurchaseMatchSummary").textContent=`${visible} of ${expensePurchaseRows.length} tracked item${expensePurchaseRows.length===1?"":"s"}`};expensePurchaseCategoryFilter.onchange=updateExpensePurchaseFilter;
     const calculator=$("#expenseCalculator");
     const reportHeaderInput=$("#expenseReportHeader");
     const categoryChecks=$$("[data-expense-category]",calculator);
@@ -1723,7 +1726,7 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
     });
 
     updateExpenseDateControls();
-    updateExpenseCalculator();
+      updateExpenseCalculator();updateExpensePurchaseFilter();
 
     $$("[data-expense-id]").forEach(b=>b.onclick=()=>openExpenseModal(expenses.find(e=>e.id===b.dataset.expenseId)));
 }else if(state.moneyTab==="mileage"){
@@ -1808,15 +1811,17 @@ ${table(
 }
 }
 
+function expenseLineItems(expense){return Array.isArray(expense&&expense.lineItems)?expense.lineItems:[]}function expenseLineQty(row){const raw=row&&row.quantity;if(raw===""||raw===null||raw===undefined)return 1;return Math.max(0,num(raw))}function expenseLineTotal(row){return expenseLineQty(row)*Math.max(0,num(row&&row.unitCost))}function expenseSubtotal(expense){return sum(expenseLineItems(expense).map(expenseLineTotal))}function expensePurchaseEntries(expenses){return expenses.flatMap(expense=>expenseLineItems(expense).map(row=>({expenseId:expense.id,date:String(expense.date||"").slice(0,10),vendor:String(expense.vendor||"").trim(),name:String(row.name||"").trim(),identifier:String(row.identifier||"").trim(),category:String(row.category||expense.category||"Other").trim()||"Other",quantity:expenseLineQty(row),unitCost:Math.max(0,num(row.unitCost)),total:expenseLineTotal(row),reorderDays:Math.max(0,num(row.reorderDays))}))).filter(row=>row.name||row.identifier)}function buildExpensePurchaseIntelligence(expenses){const rows=expensePurchaseEntries(expenses);const groups=new Map();rows.forEach(row=>{const key=row.identifier?"id:"+row.identifier.toLowerCase():"name:"+row.name.toLowerCase()+"|"+row.category.toLowerCase();if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row)});return [...groups.values()].map(group=>{const sorted=group.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));const latest=sorted[sorted.length-1];const totalSpend=sum(sorted.map(row=>row.total));const totalQty=sum(sorted.map(row=>row.quantity));const purchaseCount=new Set(sorted.map(row=>row.expenseId)).size;const dates=[...new Set(sorted.map(row=>row.date).filter(Boolean))].sort();const intervals=[];for(let index=1;index<dates.length;index++){const previous=new Date(dates[index-1]+"T12:00:00");const current=new Date(dates[index]+"T12:00:00");const days=Math.round((current-previous)/86400000);if(Number.isFinite(days)&&days>=0)intervals.push(days)}const averageInterval=intervals.length?Math.round(sum(intervals)/intervals.length):0;const manualRow=sorted.slice().reverse().find(row=>row.reorderDays>0);const manualReorder=manualRow?manualRow.reorderDays:0;const interval=manualReorder||averageInterval;let nextPurchase="";if(latest.date&&interval){const next=new Date(latest.date+"T12:00:00");next.setDate(next.getDate()+interval);nextPurchase=ymd(next)}return{name:latest.name||latest.identifier||"Unnamed item",identifier:latest.identifier,category:latest.category,vendor:latest.vendor,totalSpend,totalQty,purchaseCount,averageUnitCost:totalQty?totalSpend/totalQty:0,latestUnitCost:latest.unitCost,lastPurchase:latest.date,averageInterval,manualReorder,nextPurchase,due:!!nextPurchase&&nextPurchase<=today()}}).sort((a,b)=>{if(a.due!==b.due)return a.due?-1:1;if(a.nextPurchase&&b.nextPurchase)return a.nextPurchase.localeCompare(b.nextPurchase);if(a.nextPurchase)return -1;if(b.nextPurchase)return 1;return b.totalSpend-a.totalSpend})}
 async function openExpenseModal(exp,receiptSeed){
   const [items,events,auctions,expenseCategories]=await Promise.all([DB.getAll("items"),DB.getAll("events"),DB.getAll("auctions"),getExpenseCategories()]);
-  const e=exp||{id:DB.uid("expense"),date:today(),category:"Fuel",amount:"",vendor:"",description:"",itemId:"",eventId:"",auctionId:"",paymentMethod:"",notes:""};
+  const e=exp||{id:DB.uid("expense"),date:today(),category:"Fuel",amount:"",vendor:"",description:"",itemId:"",eventId:"",auctionId:"",paymentMethod:"",notes:"",taxRate:"",taxAmount:0,lineItems:[]};
   openModal(`
-    <div class="modal-head"><h2>${exp?"Edit Expense":"Add Expense"}</h2><button class="close-btn" data-close type="button">×</button></div>
+      <div class="modal-head"><h2>${exp?"Edit Expense":"Add Expense"}</h2><div style="display:flex;gap:8px;align-items:center"><button class="btn secondary small" id="expenseModalCalculator" type="button">Calculator</button><button class="close-btn" data-close type="button">X</button></div></div>
     <form id="expenseForm"><div class="modal-body"><div class="form-grid">
       ${field("Date","date",e.date,true,"date")}${selectField("Category","category",expenseCategories,e.category)}${field("Amount","amount",e.amount,true,"number","0.01")}${field("Vendor","vendor",e.vendor)}${field("Description","description",e.description)}${field("Payment method","paymentMethod",e.paymentMethod)}
       ${relationField("Related item","itemId",items.map(x=>[x.id,x.name]),e.itemId)}${relationField("Related event","eventId",events.map(x=>[x.id,x.title]),e.eventId)}${relationField("Related auction","auctionId",auctions.map(x=>[x.id,x.name]),e.auctionId)}${textareaField("Notes","notes",e.notes)}
       </div>
+      <div class="record-section"><div class="record-section-title"><span>ITEM</span><div><strong>Itemized Purchase</strong><small>Add only the business items from a mixed receipt. Quantity x unit cost is totaled automatically.</small></div></div><div id="expenseLineItems"></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"><button class="btn secondary small" id="addExpenseLineItem" type="button">+ Add Item</button></div><div class="form-grid"><div class="field"><label>Sales tax percentage</label><input class="input" id="expenseTaxRate" type="number" min="0" step="0.01" value="${esc(e.taxRate??"")}" placeholder="Example: 6"></div><div class="field"><label>Calculated tax</label><output class="input" id="expenseTaxAmount" style="display:flex;align-items:center">${money(e.taxAmount)}</output></div></div><div class="panel" style="margin-top:12px"><p style="margin:0"><strong>Business-item subtotal:</strong> <span id="expenseSubtotalOutput">${money(0)}</span><br><strong>Calculated tax:</strong> <span id="expenseTaxOutput">${money(0)}</span><br><strong>Expense total:</strong> <span id="expenseCalculatedTotal">${money(e.amount)}</span></p></div></div>
       <div class="record-section">
         <div class="record-section-title"><span>🧾</span><div><strong>Receipts / Attachments</strong><small>Keep receipt photos with this expense record.</small></div></div>
         <div class="photo-actions">
@@ -1829,10 +1834,12 @@ async function openExpenseModal(exp,receiptSeed){
       </div>
     </div><div class="modal-actions">${exp?`<button class="btn danger" id="deleteExpense" type="button">Delete</button>`:""}<button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Expense</button></div></form>
   `);
+    const expenseForm=$("#expenseForm");const expenseAmount=expenseForm.elements.amount;const expenseTaxRate=$("#expenseTaxRate");let simpleExpenseAmount=String(e.amount??"");const stagedLineItems=expenseLineItems(e).map(row=>Object.assign({id:DB.uid("expenseLine"),name:"",quantity:1,unitCost:"",identifier:"",category:e.category||"Other",reorderDays:"",notes:""},row));
     const stagedReceipts=Array.isArray(receiptSeed) ? receiptSeed : exp
       ? (await DB.getByIndex("attachments","ownerId",e.id)).filter(a=>a.ownerType==="expense")
       : [];
 
+    const expenseCalculatedTotals=()=>{const subtotal=sum(stagedLineItems.map(expenseLineTotal));const rate=Math.max(0,num(expenseTaxRate.value));const tax=stagedLineItems.length?Math.round((subtotal*rate/100+Number.EPSILON)*100)/100:0;const total=Math.round((subtotal+tax+Number.EPSILON)*100)/100;return{subtotal,rate,tax,total};};const updateExpenseCalculatedTotals=()=>{const totals=expenseCalculatedTotals();$("#expenseSubtotalOutput").textContent=money(totals.subtotal);$("#expenseTaxAmount").textContent=money(totals.tax);$("#expenseTaxOutput").textContent=money(totals.tax);$("#expenseCalculatedTotal").textContent=money(stagedLineItems.length?totals.total:expenseAmount.value);expenseAmount.readOnly=stagedLineItems.length>0;if(stagedLineItems.length){expenseAmount.value=totals.total.toFixed(2);}$$("[data-expense-line-total]",$("#expenseLineItems")).forEach(output=>{const index=Number(output.dataset.expenseLineTotal);output.textContent=money(expenseLineTotal(stagedLineItems[index]||{}));});};const renderExpenseLineItems=()=>{const holder=$("#expenseLineItems");holder.innerHTML=stagedLineItems.length?stagedLineItems.map((row,index)=>`<div class="panel" data-expense-line-card="${index}" style="margin:10px 0;padding:12px"><div class="section-head" style="margin-bottom:10px"><div><strong>Item ${index+1}</strong><small style="display:block;color:var(--muted);margin-top:3px">Line total: <span data-expense-line-total="${index}">${money(expenseLineTotal(row))}</span></small></div><button class="btn danger small" type="button" data-remove-expense-line="${index}">Remove</button></div><div class="form-grid"><div class="field"><label>Item / description</label><input class="input" data-expense-line-field="name" value="${esc(row.name||"")}" placeholder="Example: Packing tape"></div><div class="field"><label>SKU / UPC / part number / identifier</label><input class="input" data-expense-line-field="identifier" value="${esc(row.identifier||"")}"></div><div class="field"><label>Quantity</label><input class="input" data-expense-line-field="quantity" type="number" min="0" step="1" value="${esc(row.quantity??1)}"></div><div class="field"><label>Unit cost</label><input class="input" data-expense-line-field="unitCost" type="number" min="0" step="0.01" value="${esc(row.unitCost??"")}"></div><div class="field"><label>Category</label><select class="select" data-expense-line-field="category">${expenseCategories.map(category=>`<option value="${esc(category)}" ${String(category)===String(row.category||e.category)?"selected":""}>${esc(category)}</option>`).join("")}</select></div><div class="field"><label>Reorder after days</label><input class="input" data-expense-line-field="reorderDays" type="number" min="0" step="1" value="${esc(row.reorderDays??"")}" placeholder="Optional"></div><div class="field full"><label>Item notes</label><input class="input" data-expense-line-field="notes" value="${esc(row.notes||"")}"></div></div></div>`).join(""):`<div class="muted">No itemized products. Use the normal Amount field for a simple expense, or add only the business items from a mixed receipt.</div>`;$$("[data-expense-line-card]",holder).forEach(card=>{const index=Number(card.dataset.expenseLineCard);$$("[data-expense-line-field]",card).forEach(input=>{const sync=()=>{stagedLineItems[index][input.dataset.expenseLineField]=input.value;updateExpenseCalculatedTotals();};input.oninput=sync;input.onchange=sync;});});$$("[data-remove-expense-line]",holder).forEach(button=>{button.onclick=()=>{stagedLineItems.splice(Number(button.dataset.removeExpenseLine),1);if(!stagedLineItems.length){expenseAmount.readOnly=false;expenseAmount.value=simpleExpenseAmount;}renderExpenseLineItems();};});updateExpenseCalculatedTotals();};
     const renderReceiptPreview=()=>{
       const strip=$("#receiptPreview");
       if(!strip)return;
@@ -1916,8 +1923,9 @@ async function openExpenseModal(exp,receiptSeed){
       renderReceiptPreview();
     };
 
+    $("#addExpenseLineItem").onclick=()=>{if(!stagedLineItems.length){simpleExpenseAmount=String(expenseAmount.value||"");}stagedLineItems.push({id:DB.uid("expenseLine"),name:"",quantity:1,unitCost:"",identifier:"",category:expenseForm.elements.category.value||"Other",reorderDays:"",notes:""});renderExpenseLineItems();};expenseTaxRate.oninput=updateExpenseCalculatedTotals;expenseAmount.oninput=()=>{if(!stagedLineItems.length){simpleExpenseAmount=expenseAmount.value;}updateExpenseCalculatedTotals();};$("#expenseModalCalculator").onclick=openExpenseQuickCalculator;
     $("#takeReceiptPhotoBtn").onclick=async()=>{
-      const expenseDraft=Object.assign({},e,Object.fromEntries(new FormData($("#expenseForm")).entries()));
+      const draftTotals=expenseCalculatedTotals();const expenseDraft=Object.assign({},e,Object.fromEntries(new FormData($("#expenseForm")).entries()),{lineItems:stagedLineItems.map(row=>Object.assign({},row)),taxRate:expenseTaxRate.value,taxAmount:stagedLineItems.length?draftTotals.tax:0,amount:stagedLineItems.length?draftTotals.total.toFixed(2):expenseAmount.value});
       const preservedReceipts=stagedReceipts.slice();
       closeModal();
       await startCameraCapture(async blobs=>{
@@ -1948,11 +1956,11 @@ async function openExpenseModal(exp,receiptSeed){
       event.target.value="";
     };
 
-    renderReceiptPreview();
+    renderExpenseLineItems();renderReceiptPreview();
 
   $("#expenseForm").onsubmit=async x=>{
       x.preventDefault();
-      await DB.put("expenses",Object.assign({},e,Object.fromEntries(new FormData(x.currentTarget).entries())));
+      const data=Object.fromEntries(new FormData(x.currentTarget).entries());const cleanLineItems=stagedLineItems.map(row=>({id:row.id||DB.uid("expenseLine"),name:String(row.name||"").trim(),quantity:expenseLineQty(row),unitCost:Math.max(0,num(row.unitCost)),identifier:String(row.identifier||"").trim(),category:String(row.category||data.category||"Other").trim()||"Other",reorderDays:Math.max(0,Math.round(num(row.reorderDays))),notes:String(row.notes||"").trim()})).filter(row=>row.name||row.identifier||row.unitCost>0);data.lineItems=cleanLineItems;data.taxRate=String(expenseTaxRate.value||"").trim();if(cleanLineItems.length){const subtotal=sum(cleanLineItems.map(expenseLineTotal));const tax=Math.round((subtotal*Math.max(0,num(data.taxRate))/100+Number.EPSILON)*100)/100;data.taxAmount=tax;data.amount=(Math.round((subtotal+tax+Number.EPSILON)*100)/100).toFixed(2);}else{data.taxAmount=0;}await DB.put("expenses",Object.assign({},e,data));
 
       const existingReceiptAttachments=(await DB.getByIndex("attachments","ownerId",e.id))
         .filter(a=>a.ownerType==="expense");
@@ -1986,6 +1994,7 @@ async function openExpenseModal(exp,receiptSeed){
     };
 }
 
+let expenseQuickCalcMemory=0;function openExpenseQuickCalculator(){const existing=document.getElementById("expenseQuickCalculator");if(existing){existing.remove();return;}const overlay=document.createElement("div");overlay.id="expenseQuickCalculator";overlay.style.cssText="position:fixed;inset:0;z-index:12000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:18px";overlay.innerHTML=`<div style="width:min(390px,96vw);background:#0c1624;border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 24px 70px rgba(0,0,0,.55)"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px"><div><div class="eyebrow">EXPENSES</div><h2 style="margin:0">Quick Calculator</h2></div><button class="close-btn" type="button" data-ec="close">X</button></div><div id="expenseCalcMemoryStatus" style="min-height:18px;color:var(--muted);font-size:12px;text-align:right;margin-bottom:5px"></div><div id="expenseCalcExpression" style="min-height:26px;background:#06111f;border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;padding:10px 15px 4px;text-align:right;color:var(--muted);font-size:15px;overflow-wrap:anywhere">0</div><div id="expenseCalcDisplay" style="background:#06111f;border:1px solid var(--line);border-top:0;border-radius:0 0 14px 14px;padding:6px 15px 15px;text-align:right;font-size:30px;font-weight:800;overflow:hidden;margin-bottom:12px">0</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px"><button class="btn ghost" type="button" data-ec="MC">MC</button><button class="btn ghost" type="button" data-ec="MR">MR</button><button class="btn ghost" type="button" data-ec="M+">M+</button><button class="btn ghost" type="button" data-ec="M-">M-</button></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"><button class="btn secondary" type="button" data-ec="C">C</button><button class="btn secondary" type="button" data-ec="DEL">DEL</button><button class="btn secondary" type="button" data-ec="%">%</button><button class="btn secondary" type="button" data-ec="/">/</button><button class="btn secondary" type="button" data-ec="7">7</button><button class="btn secondary" type="button" data-ec="8">8</button><button class="btn secondary" type="button" data-ec="9">9</button><button class="btn secondary" type="button" data-ec="*">x</button><button class="btn secondary" type="button" data-ec="4">4</button><button class="btn secondary" type="button" data-ec="5">5</button><button class="btn secondary" type="button" data-ec="6">6</button><button class="btn secondary" type="button" data-ec="-">-</button><button class="btn secondary" type="button" data-ec="1">1</button><button class="btn secondary" type="button" data-ec="2">2</button><button class="btn secondary" type="button" data-ec="3">3</button><button class="btn secondary" type="button" data-ec="+">+</button><button class="btn secondary" type="button" data-ec="0">0</button><button class="btn secondary" type="button" data-ec=".">.</button><button class="btn" type="button" data-ec="=" style="grid-column:span 2">=</button></div></div>`;document.body.appendChild(overlay);const display=overlay.querySelector("#expenseCalcDisplay");const expressionDisplay=overlay.querySelector("#expenseCalcExpression");const memoryStatus=overlay.querySelector("#expenseCalcMemoryStatus");let current="0";let accumulator=null;let operator="";let waiting=false;let expressionPrefix="";let completedExpression="";let justFinished=false;const format=value=>{const number=Number(value);return String(Number.isFinite(number)?Math.round((number+Number.EPSILON)*100000000)/100000000:0)};const operatorLabel=op=>op==="*"?"x":op;const expressionText=()=>{if(completedExpression)return completedExpression;if(operator&&accumulator!==null)return expressionPrefix+(waiting?"":current);return current;};const render=()=>{display.textContent=current;expressionDisplay.textContent=expressionText();memoryStatus.textContent=expenseQuickCalcMemory!==0?`Memory: ${expenseQuickCalcMemory}`:"Memory empty";};const setCurrent=value=>{current=format(value);};const calculate=(left,right,op)=>{if(op==="+")return left+right;if(op==="-")return left-right;if(op==="*")return left*right;if(op==="/")return right===0?0:left/right;return right;};const resetCalculation=()=>{current="0";accumulator=null;operator="";waiting=false;expressionPrefix="";completedExpression="";justFinished=false;};overlay.onclick=event=>{if(event.target===overlay){overlay.remove();return;}const button=event.target.closest("[data-ec]");if(!button)return;const key=button.dataset.ec;if(key==="close"){overlay.remove();return;}if("0123456789".includes(key)){if(justFinished){resetCalculation();current=key;}else if(waiting||current==="0"){current=key;waiting=false;}else{current+=key;}completedExpression="";render();return;}if(key==="."){if(justFinished){resetCalculation();current="0.";}else if(waiting){current="0.";waiting=false;}else if(!current.includes(".")){current+=".";}completedExpression="";render();return;}if(["+","-","*","/"].includes(key)){const value=num(current);if(justFinished){accumulator=value;operator=key;expressionPrefix=`${current} ${operatorLabel(key)} `;completedExpression="";waiting=true;justFinished=false;render();return;}if(accumulator===null){accumulator=value;operator=key;expressionPrefix=`${current} ${operatorLabel(key)} `;}else if(waiting){operator=key;expressionPrefix=`${accumulator} ${operatorLabel(key)} `;}else{accumulator=calculate(accumulator,value,operator);expressionPrefix+=`${current} ${operatorLabel(key)} `;current=format(accumulator);operator=key;}waiting=true;completedExpression="";render();return;}if(key==="="){if(accumulator!==null&&operator&&!waiting){const right=current;const result=calculate(accumulator,num(right),operator);completedExpression=`${expressionPrefix}${right} =`;current=format(result);accumulator=null;operator="";waiting=true;justFinished=true;render();}return;}if(key==="%"){let value=num(current);if(accumulator!==null&&(operator==="+"||operator==="-")){value=accumulator*value/100;}else{value=value/100;}current=format(value);waiting=false;completedExpression="";justFinished=false;render();return;}if(key==="C"){resetCalculation();render();return;}if(key==="DEL"){if(justFinished){resetCalculation();render();return;}if(waiting)return;current=current.length>1?current.slice(0,-1):"0";if(current==="-"||current==="")current="0";render();return;}if(key==="MC"){expenseQuickCalcMemory=0;render();return;}if(key==="MR"){if(justFinished){resetCalculation();}current=format(expenseQuickCalcMemory);waiting=false;completedExpression="";justFinished=false;render();return;}if(key==="M+"){expenseQuickCalcMemory=Math.round((expenseQuickCalcMemory+num(current)+Number.EPSILON)*100)/100;render();return;}if(key==="M-"){expenseQuickCalcMemory=Math.round((expenseQuickCalcMemory-num(current)+Number.EPSILON)*100)/100;render();return;}};render();}
 async function openMileageModal(row){
   const [events,auctions]=await Promise.all([DB.getAll("events"),DB.getAll("auctions")]);
   const m=row||{id:DB.uid("mileage"),date:today(),purpose:"",from:"",to:"",startOdometer:"",endOdometer:"",miles:"",eventId:"",auctionId:"",notes:""};
@@ -2851,6 +2860,7 @@ async function openExpenseDetail(id,returnToReceiptArchive=false){
           ${kv("Related auction",auction?.name)}
         </div>
       </div>
+        ${expenseLineItems(expense).length?`<div class="panel"><h3>Itemized Purchase</h3><p><strong>Business-item subtotal:</strong> ${money(expenseSubtotal(expense))} - <strong>Tax rate:</strong> ${esc(expense.taxRate||0)}% - <strong>Calculated tax:</strong> ${money(expense.taxAmount)}</p><div class="list">${expenseLineItems(expense).map(row=>`<div class="list-card"><div><h4>${esc(row.name||row.identifier||"Item")}</h4><p>${row.identifier?`ID: ${esc(row.identifier)} - `:""}${esc(row.category||expense.category||"Other")} - Qty ${expenseLineQty(row)} x ${money(row.unitCost)}${row.reorderDays?` - Reorder ${esc(row.reorderDays)} days`:""}${row.notes?`<br>${esc(row.notes)}`:""}</p></div><strong>${money(expenseLineTotal(row))}</strong></div>`).join("")}</div></div>`:""}
       ${expense.notes?`<div class="panel"><h3>Notes</h3><p>${nl2br(expense.notes)}</p></div>`:""}
       <div class="record-section">
         <div class="record-section-title"><span>🧾</span><div><strong>Receipts</strong><small>${receipts.length} attached receipt${receipts.length===1?"":"s"}</small></div></div>
@@ -3039,9 +3049,9 @@ async function getExpenseCategories(expensesSeed){
     ? row.value.map(value=>String(value||"").trim()).filter(Boolean)
     : [];
 
-  const used=expenses
-    .map(expense=>String(expense.category||"").trim())
-    .filter(Boolean);
+    const used=expenses.flatMap(expense=>[
+      String(expense.category||"").trim(),...expenseLineItems(expense).map(row=>String(row.category||"").trim())
+    ]).filter(Boolean);
 
   const additional=[...custom,...used]
     .filter(value=>!EXPENSE_CATEGORIES.some(category=>category.toLowerCase()===value.toLowerCase()))
@@ -3114,9 +3124,9 @@ async function openExpenseCategoriesModal(){
     updatedAt:new Date().toISOString()
   });
 
-  const usageCount=name=>expenses.filter(expense=>
-    String(expense.category||"").trim().toLowerCase()===name.toLowerCase()
-  ).length;
+    const usageCount=name=>expenses.reduce((count,expense)=>{
+      const target=String(name||"").trim().toLowerCase();const main=String(expense.category||"").trim().toLowerCase()===target?1:0;const lines=expenseLineItems(expense).filter(row=>String(row.category||"").trim().toLowerCase()===target).length;return count+main+lines;
+    },0);
 
   const renderList=()=>{
     list.innerHTML=custom.length
@@ -3126,7 +3136,7 @@ async function openExpenseCategoriesModal(){
             <div class="list-card">
               <div>
                 <strong>${esc(name)}</strong>
-                <p>${count} expense record${count===1?"":"s"}</p>
+                <p>${count} usage${count===1?"":"s"} across expenses and itemized purchases</p>
               </div>
               <button class="btn danger small" type="button" data-remove-expense-category="${index}">Remove</button>
             </div>
@@ -3140,7 +3150,7 @@ async function openExpenseCategoriesModal(){
         const name=custom[index];
 
         if(usageCount(name)>0){
-          alert("That expense category is currently used by expense records. Change those expenses before removing it.");
+          alert("That expense category is currently used by an expense or itemized purchase. Change those records before removing it.");
           return;
         }
 
@@ -3156,9 +3166,9 @@ async function openExpenseCategoriesModal(){
     const name=String(input.value||"").trim();
     if(!name)return;
 
-    const used=expenses
-      .map(expense=>String(expense.category||"").trim())
-      .filter(Boolean);
+      const used=expenses.flatMap(expense=>[
+        String(expense.category||"").trim(),...expenseLineItems(expense).map(row=>String(row.category||"").trim())
+      ]).filter(Boolean);
 
     const known=[...EXPENSE_CATEGORIES,...custom,...used];
 
