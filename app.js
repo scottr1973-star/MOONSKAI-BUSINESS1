@@ -252,6 +252,8 @@ const soldCost=sum(activeSales.map(s=>num(s.costBasis)));
 const saleCostsTotal=sum(activeSales.map(s=>saleCosts(s)));
 const expensesTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e=>num(e.amount)));
 const profit=revenue-soldCost-saleCostsTotal-expensesTotal;
+const inventoryInvestment=sum(items.map(i=>itemCost(i)-num(i.estimatedRepairCost)));
+const totalBusinessInvestment=inventoryInvestment+expensesTotal+saleCostsTotal;
   const miles=sum(mileage.map(m=>num(m.miles)));
 
   const needsFinish=items.filter(i=>i.status==="Draft / Finish Cataloging" || !i.name || !i.category).length;
@@ -291,6 +293,9 @@ ${attentionCard("Auction Follow-Up",needsAuctionFollowUp,"Ended auctions with un
       ${snapshotStat("Invested",money(invested),"landed cost in unsold inventory","","invested")}
       ${snapshotStat("Combined Asking Prices",money(asking),"sum of asking prices for all unsold inventory","","asking")}
       ${snapshotStat("Estimated Net",money(profit),"sales minus sold cost and expenses",profit>=0?"kpi-positive":"kpi-negative","net")}
+      ${snapshotStat("Total Inventory Spending",money(inventoryInvestment),"actual acquisition spending across sold and unsold inventory","","inventory-spending")}
+      ${snapshotStat("Business Expenses",money(expensesTotal),"recorded general business expenses","","expenses")}
+      ${snapshotStat("Total Business Investment",money(totalBusinessInvestment),"inventory spending plus business expenses and selling costs","","business-investment")}
     </section>
 
     <div class="section-head"><div><h2>Quick access</h2></div></div>
@@ -334,7 +339,17 @@ ${attentionCard("Auction Follow-Up",needsAuctionFollowUp,"Ended auctions with un
       openSnapshotBreakdown("Combined Asking Prices","Sum of asking prices for all unsold inventory.",rows,item=>num(item.askingPrice),asking);
       return;
     }
-    if(action==="net"){
+    if(action==="inventory-spending"){
+      const rows=items.slice().sort((a,b)=>(itemCost(b)-num(b.estimatedRepairCost))-(itemCost(a)-num(a.estimatedRepairCost)));
+      openSnapshotBreakdown("Total Inventory Spending","Actual acquisition spending across all inventory, sold or unsold. Estimated repair costs are excluded.",rows,item=>itemCost(item)-num(item.estimatedRepairCost),inventoryInvestment);
+      return;
+    }
+    if(action==="expenses"){
+      state.moneyTab="expenses";
+      navigate("money");
+      return;
+    }
+    if(action==="net" || action==="business-investment"){
       state.moneyTab="overview";
       navigate("money");
     }
@@ -2479,7 +2494,8 @@ async function renderUserGuide(){
         <div class="panel">
           <h3>Business Snapshot</h3>
           <p>In Stock shows unsold inventory count. Invested shows landed cost tied up in unsold inventory. Combined Asking Prices is the sum of asking prices for unsold inventory. Estimated Net uses sales, sold inventory cost, selling costs and general business expenses.</p>
-          <p>The Snapshot cards are clickable. In Stock opens Inventory, Invested and Combined Asking Prices open item breakdowns, and Estimated Net opens Money → Overview.</p>
+          <p>Total Inventory Spending shows actual acquisition spending across all inventory, sold or unsold. Business Expenses shows recorded general business expenses. Total Business Investment combines Total Inventory Spending, Business Expenses and selling costs.</p>
+          <p>The Snapshot cards are clickable. In Stock opens Inventory; Invested, Combined Asking Prices and Total Inventory Spending open item breakdowns; Estimated Net and Total Business Investment open Money → Overview; Business Expenses opens Money → Expenses.</p>
         </div>
         <div class="panel">
           <h3>Needs Attention</h3>
