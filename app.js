@@ -1192,7 +1192,7 @@ $("#googleCalendarBtn").onclick=()=>{
 async function renderMoney(){
 const [expenses,mileage,sales,items,transactions,attachments]=await Promise.all([DB.getAll("expenses"),DB.getAll("mileage"),DB.getAll("sales"),DB.getAll("items"),DB.getAll("transactions"),DB.getAll("attachments")]);
 const activeSales=sales.filter(s=>s.status!=="Voided");
-const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e=>num(e.amount))),miles=sum(mileage.map(m=>num(m.miles))),revenue=sum(activeSales.map(s=>num(s.soldPrice)+num(s.shippingCharged))),cost=sum(activeSales.map(s=>num(s.costBasis))),saleCostsTotal=sum(activeSales.map(s=>saleCosts(s))),profit=revenue-cost-saleCostsTotal-expTotal;
+const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e=>num(e.amount))),miles=sum(mileage.map(m=>num(m.miles))),revenue=sum(activeSales.map(s=>num(s.soldPrice)+num(s.shippingCharged))),cost=sum(activeSales.map(s=>num(s.costBasis))),saleCostsTotal=sum(activeSales.map(s=>saleCosts(s))),profit=revenue-cost-saleCostsTotal-expTotal,inventoryInvestment=sum(items.map(i=>itemCost(i)-num(i.estimatedRepairCost))),totalBusinessInvestment=inventoryInvestment+expTotal+saleCostsTotal;
   view.innerHTML=`
     <div class="section-head"><div><h2>Money</h2><p>Sales, expenses and business mileage.</p></div><button class="btn small" id="addExpenseTop">＋ Expense</button></div>
     <section class="stats">${stat("Sales",money(revenue),"gross revenue")}${stat("Expenses",money(expTotal),"recorded business expenses")}${stat("Mileage",miles.toFixed(1)+" mi","business travel")}${stat("Estimated Net",money(profit),"before taxes",profit>=0?"kpi-positive":"kpi-negative")}</section>
@@ -1213,6 +1213,15 @@ const expTotal=sum(expenses.filter(e=>!isCapitalizedAcquisitionExpense(e)).map(e
         <div class="money-breakdown-row money-breakdown-total"><span>Estimated Net</span><strong class="${profit>=0?"kpi-positive":"kpi-negative"}">${money(profit)}</strong></div>
       </div>
       <div class="panel money-overview-note"><p>Estimated Net is a business operating estimate before taxes. Capitalized inventory acquisition expenses are excluded from general expenses because they are already included in item cost basis.</p></div>
+        <div class="section-head"><div><h3>Total Business Investment</h3><p>All recorded money spent on the business, whether inventory has sold or not.</p></div></div>
+        <div class="panel money-net-breakdown">
+          <div class="money-breakdown-row"><span>Inventory acquisition spending</span><strong>${money(inventoryInvestment)}</strong></div>
+          <div class="money-breakdown-row"><span>General business expenses</span><strong>${money(expTotal)}</strong></div>
+          <div class="money-breakdown-row"><span>Selling costs</span><strong>${money(saleCostsTotal)}</strong></div>
+          <div class="money-breakdown-row money-breakdown-total"><span>Total Business Investment</span><strong>${money(totalBusinessInvestment)}</strong></div>
+          <div class="money-breakdown-row"><span>Total Sales</span><strong>${money(revenue)}</strong></div>
+        </div>
+        <div class="panel money-overview-note"><p>Total Business Investment combines actual acquisition spending for all sold and unsold inventory, general business expenses and selling costs. Estimated repair costs are not included unless they are separately recorded as an actual expense.</p></div>
     `;
   }else if(state.moneyTab==="expenses"){
     expenses.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
