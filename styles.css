@@ -177,6 +177,109 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 .modal-body{padding:18px}
 .modal-actions{padding:0 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.research-browser-root{
+  position:fixed;
+  inset:0;
+  z-index:400;
+}
+
+.research-browser-root[hidden]{
+  display:none;
+}
+
+.research-browser-backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.82);
+  display:grid;
+  place-items:center;
+  padding:12px;
+}
+
+.research-browser{
+  width:min(1200px,calc(100vw - 24px));
+  height:min(92vh,900px);
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:auto auto auto minmax(0,1fr);
+  border:1px solid var(--line);
+  border-radius:24px;
+  background:#0a1728;
+  box-shadow:0 30px 90px rgba(0,0,0,.65);
+}
+
+.research-browser-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  background:rgba(10,23,40,.98);
+  border-bottom:1px solid var(--line);
+}
+
+.research-browser-head h2{
+  margin:0;
+  font-size:22px;
+}
+
+.research-browser-toolbar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 12px;
+  border-bottom:1px solid var(--line);
+}
+
+.research-browser-toolbar .input{
+  flex:1 1 420px;
+  min-width:0;
+}
+
+.research-browser-help{
+  padding:8px 12px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.4;
+  border-bottom:1px solid var(--line);
+}
+
+.research-browser-frame-wrap{
+  min-height:0;
+  background:#fff;
+}
+
+.research-browser-frame-wrap iframe{
+  display:block;
+  width:100%;
+  height:100%;
+  border:0;
+  background:#fff;
+}
+
+@media(max-width:700px){
+  .research-browser-backdrop{
+    padding:0;
+  }
+
+  .research-browser{
+    width:100%;
+    height:100%;
+    border-radius:0;
+  }
+
+  .research-browser-toolbar{
+    flex-wrap:wrap;
+  }
+
+  .research-browser-toolbar .input{
+    flex-basis:100%;
+  }
+
+  .research-browser-toolbar .btn{
+    flex:1 1 auto;
+  }
+}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
 .field{display:grid;gap:7px}
 .field.full{grid-column:1/-1}

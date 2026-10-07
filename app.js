@@ -4577,8 +4577,10 @@ async function openAuctionModal(auction,seed){
         <div class="field"><label>Color</label><input class="input" style="padding:5px" type="color" name="color" value="${safeColor(a.color)}"></div>
         ${textareaField("Notes","notes",a.notes)}
       </div></div>
-    </div><div class="modal-actions"><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Auction</button></div></form>
+</div><div class="modal-actions"><button class="btn secondary" id="auctionResearch" type="button">Research</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Auction</button></div></form>
   `);
+const auctionResearch=$("#auctionResearch");
+if(auctionResearch)auctionResearch.onclick=()=>openResearchBrowser($("#auctionForm").elements.website.value);
   $("#auctionForm").onsubmit=async e=>{
     e.preventDefault();
     const data=Object.fromEntries(new FormData(e.currentTarget).entries());
@@ -4715,9 +4717,11 @@ async function openLotModal(auction,lot){
         ${textareaField("Advertised condition","conditionAdvertised",l.conditionAdvertised)}
         ${textareaField("Notes","notes",l.notes)}
       </div></div></div>
-      <div class="modal-actions">${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}<button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button></div>
+<div class="modal-actions">${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}<button class="btn secondary" id="lotResearch" type="button">Research</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button></div>
     </form>
   `);
+const lotResearch=$("#lotResearch");
+if(lotResearch)lotResearch.onclick=()=>openResearchBrowser($("#lotForm").elements.listingUrl.value);
   const openLotWebsite=$("#openLotWebsite");
   if(openLotWebsite)openLotWebsite.onclick=()=>openExternalUrl(l.listingUrl,"lot listing");
   $("#lotForm").onsubmit=async e=>{
@@ -6040,6 +6044,166 @@ function cap(v){return v.charAt(0).toUpperCase()+v.slice(1);}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
 function nl2br(v){return esc(v).replace(/\n/g,"<br>");}
 function safeColor(v){return /^#[0-9a-f]{6}$/i.test(String(v||""))?v:"#45b7ff";}
+function normalizeResearchUrl(value){
+  let raw=String(value||"").trim();
+
+  if(!raw)return "";
+
+  if(!/^[a-z][a-z0-9+.-]*:/i.test(raw)){
+    if(raw.includes(".")&&!/\s/.test(raw)){
+      raw="https://"+raw;
+    }else{
+      return `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
+    }
+  }
+
+  try{
+    const url=new URL(raw);
+
+    if(url.protocol!=="http:"&&url.protocol!=="https:"){
+      throw new Error("Unsupported URL");
+    }
+
+    return url.href;
+  }catch(err){
+    return "";
+  }
+}
+
+async function openResearchBrowser(seedUrl=""){
+  let root=$("#researchBrowserRoot");
+
+  if(!root){
+    root=document.createElement("div");
+    root.id="researchBrowserRoot";
+    root.className="research-browser-root";
+    root.hidden=true;
+
+    root.innerHTML=`
+      <div class="research-browser-backdrop">
+        <section class="research-browser">
+          <div class="research-browser-head">
+            <div>
+              <div class="eyebrow">AUCTION RESEARCH</div>
+              <h2>Research Browser</h2>
+            </div>
+
+            <button class="close-btn" id="researchBrowserClose" type="button">×</button>
+          </div>
+
+          <div class="research-browser-toolbar">
+            <input
+              class="input"
+              id="researchBrowserAddress"
+              autocomplete="off"
+              placeholder="Enter a website, URL, or search"
+            >
+
+            <button class="btn" id="researchBrowserGo" type="button">Go</button>
+            <button class="btn secondary" id="researchBrowserNewTab" type="button">Open in New Tab</button>
+          </div>
+
+          <div class="research-browser-help">
+            Some websites block embedded viewing. If a page does not display here, use Open in New Tab. Your Auction or Lot form will remain open.
+          </div>
+
+          <div class="research-browser-frame-wrap">
+            <iframe
+              id="researchBrowserFrame"
+              title="Auction research browser"
+              referrerpolicy="no-referrer-when-downgrade"
+            ></iframe>
+          </div>
+        </section>
+      </div>
+    `;
+
+    document.body.appendChild(root);
+
+    const address=$("#researchBrowserAddress",root);
+    const frame=$("#researchBrowserFrame",root);
+
+    const navigateResearch=async()=>{
+      const url=normalizeResearchUrl(address.value);
+
+      if(!url){
+        alert("Enter a valid website, URL, or search.");
+        return;
+      }
+
+      address.value=url;
+      frame.src=url;
+
+      await DB.put("settings",{
+        key:"researchBrowserUrl",
+        value:url,
+        updatedAt:new Date().toISOString()
+      });
+    };
+
+    $("#researchBrowserGo",root).onclick=navigateResearch;
+
+    address.onkeydown=e=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        navigateResearch();
+      }
+    };
+
+    $("#researchBrowserNewTab",root).onclick=()=>{
+      const url=normalizeResearchUrl(address.value);
+
+      if(!url){
+        alert("Enter a valid website, URL, or search.");
+        return;
+      }
+
+      window.open(url,"_blank","noopener");
+    };
+
+    $("#researchBrowserClose",root).onclick=()=>{
+      root.hidden=true;
+    };
+
+    $(".research-browser-backdrop",root).onclick=e=>{
+      if(e.target.classList.contains("research-browser-backdrop")){
+        root.hidden=true;
+      }
+    };
+  }
+
+  const address=$("#researchBrowserAddress",root);
+  const frame=$("#researchBrowserFrame",root);
+
+  if(seedUrl){
+    const seeded=normalizeResearchUrl(seedUrl);
+
+    if(seeded){
+      address.value=seeded;
+
+      if(!frame.src){
+        frame.src=seeded;
+      }
+
+      await DB.put("settings",{
+        key:"researchBrowserUrl",
+        value:seeded,
+        updatedAt:new Date().toISOString()
+      });
+    }
+  }else if(!frame.src){
+    const saved=await DB.getOne("settings","researchBrowserUrl");
+    const savedUrl=normalizeResearchUrl(saved?.value);
+
+    if(savedUrl){
+      address.value=savedUrl;
+      frame.src=savedUrl;
+    }
+  }
+
+  root.hidden=false;
+  address.focus();
+}
 function openExternalUrl(value,label="website"){
   let raw=String(value||"").trim();
   if(!raw){alert(`No ${label} URL has been saved.`);return;}
