@@ -4555,11 +4555,11 @@ async function renderAuctionManager(){
 async function openAuctionModal(auction,seed){
   const existingAuctions=await DB.getAll("auctions");
   const platformSuggestions=[...new Set(existingAuctions.map(row=>String(row.platform||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-  const a=Object.assign({
-    id:DB.uid("auction"),name:"",auctionMode:"Online",platform:"",date:today(),startTime:"",
-    endDateTime:"",location:"",company:"",website:"",previewDate:"",priority:"Medium",status:"Watching",
-    shippingStatus:"Watching",color:"#f7c75d",notes:""
-  },seed||{},auction||{});
+const a=Object.assign({
+  id:DB.uid("auction"),name:"",auctionMode:"Online",platform:"",date:today(),startTime:"",
+  endDateTime:"",location:"",company:"",website:"",previewDate:"",priority:"Medium",status:"Watching",
+  shippingStatus:"Watching",color:"#f7c75d",notes:"",researchNotes:""
+},seed||{},auction||{});
   openModal(`
     <div class="modal-head"><div><div class="eyebrow">SOURCING</div><h2>${auction?"Edit Auction":"Track Auction"}</h2></div><button class="close-btn" data-close type="button">×</button></div>
     <form id="auctionForm"><div class="modal-body">
@@ -4576,11 +4576,12 @@ async function openAuctionModal(auction,seed){
         ${field("Preview / pickup date","previewDate",a.previewDate,false,"date")}
         <div class="field"><label>Color</label><input class="input" style="padding:5px" type="color" name="color" value="${safeColor(a.color)}"></div>
         ${textareaField("Notes","notes",a.notes)}
+<textarea name="researchNotes" hidden>${esc(a.researchNotes||"")}</textarea>
       </div></div>
 </div><div class="modal-actions"><button class="btn secondary" id="auctionResearch" type="button">Research</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Auction</button></div></form>
   `);
 const auctionResearch=$("#auctionResearch");
-if(auctionResearch)auctionResearch.onclick=()=>openResearchBrowser($("#auctionForm").elements.website.value);
+if(auctionResearch)auctionResearch.onclick=()=>openResearchBrowser($("#auctionForm").elements.website.value,$("#auctionForm").elements.researchNotes);
   $("#auctionForm").onsubmit=async e=>{
     e.preventDefault();
     const data=Object.fromEntries(new FormData(e.currentTarget).entries());
@@ -4620,6 +4621,7 @@ async function openAuctionDetail(id){
       <p style="color:var(--muted)">${auction.endDateTime?prettyDateTime(auction.endDateTime):prettyDate(auction.date)}${auction.platform?` · ${esc(auction.platform)}`:""}${auction.company?` · ${esc(auction.company)}`:""}${auction.location?` · ${esc(auction.location)}`:""}</p>
       <div class="auction-priority priority-${String(auction.priority||"Medium").toLowerCase()}">${esc(auction.priority||"Medium")} Priority</div>
       ${auction.notes?`<div class="panel"><p>${nl2br(auction.notes)}</p></div>`:""}
+${auction.researchNotes?`<div class="panel"><h3>Research Notes</h3><p>${nl2br(auction.researchNotes)}</p></div>`:""}
       <div class="section-head"><div><h3>Watch list</h3></div><button class="btn small" id="addLot">＋ Lot</button></div>
       <div class="list">${lots.length?lots.map(l=>{const priority=["High","Medium","Low"].includes(l.priority)?l.priority:"Medium";const lotTime=l.endDateTime?prettyDateTime(l.endDateTime):"Time not set";const lotConflict=lotConflictIds.has(l.id);const outcome=lotOutcome(l);return `<div class="list-card watch-lot-card ${lotConflict?"lot-time-conflict":""}" data-lot-detail="${l.id}"><div><div class="auction-card-topline"><span class="auction-priority auction-priority-small priority-${priority.toLowerCase()}">${esc(priority)} Priority</span><span class="lot-outcome lot-outcome-${outcome.toLowerCase().replaceAll(" ","-")}">${esc(outcome)}</span>${lotConflict?`<span class="watch-lot-conflict-label">⚠ Time Conflict</span>`:""}</div><h4>${esc(l.name)}</h4><p>Lot ${esc(l.lotNumber||"—")} · ${esc(lotTime)} · Expected ${money(l.expectedResale)} · Max ${money(l.maxBid)}${num(l.winningBid)>0?` · Winning price ${money(l.winningBid)}`:""}</p></div><div class="watch-lot-actions">${l.listingUrl?`<button class="btn ghost small" type="button" data-lot-listing="${l.id}">Open Listing</button>`:""}${outcome==="Won"&&!l.inventoryItemId?`<button class="btn small" type="button" data-catalog-lot="${l.id}">Catalog Item</button>`:""}${l.inventoryItemId?`<button class="btn small" type="button" data-view-inventory="${l.id}">View Inventory Item</button>`:""}<button class="btn secondary small" type="button" data-lot-detail-button="${l.id}">Details</button></div></div>`;}).join(""):empty("No watched lots yet.")}</div>
     </div>
@@ -4649,6 +4651,7 @@ async function openLotDetail(auction,lot){
       </div>
       ${lot.conditionAdvertised?`<div class="panel"><h3>Advertised Condition</h3><p>${nl2br(lot.conditionAdvertised)}</p></div>`:""}
       ${lot.notes?`<div class="panel"><h3>Notes</h3><p>${nl2br(lot.notes)}</p></div>`:""}
+${lot.researchNotes?`<div class="panel"><h3>Research Notes</h3><p>${nl2br(lot.researchNotes)}</p></div>`:""}
     </div>
     <div class="modal-actions">${lot.listingUrl?`<button class="btn secondary" id="lotDetailListing" type="button">Open Listing</button>`:""}${outcome==="Won"&&!lot.inventoryItemId?`<button class="btn" id="lotDetailCatalog" type="button">Catalog Item</button>`:""}${lot.inventoryItemId?`<button class="btn" id="lotDetailInventory" type="button">View Inventory Item</button>`:""}<button class="btn secondary" id="lotDetailEdit" type="button">Edit</button><button class="btn" data-close type="button">Done</button></div>
   `);
@@ -4699,7 +4702,7 @@ async function catalogLotToInventory(auction,lot){
 }
 
 async function openLotModal(auction,lot){
-  const l=lot||{id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",endDateTime:"",priority:"Medium",outcome:"Watching",expectedResale:"",maxBid:"",winningBid:"",buyerPremium:"",tax:"",shippingCost:"",handlingCost:"",conditionAdvertised:"",notes:"",inventoryItemId:""};
+const l=lot||{id:DB.uid("lot"),auctionId:auction.id,name:"",lotNumber:"",listingUrl:"",endDateTime:"",priority:"Medium",outcome:"Watching",expectedResale:"",maxBid:"",winningBid:"",buyerPremium:"",tax:"",shippingCost:"",handlingCost:"",conditionAdvertised:"",notes:"",researchNotes:"",inventoryItemId:""};
   const currentOutcome=lotOutcome(l)==="Cataloged"?"Won":lotOutcome(l);
   openModal(`
     <div class="modal-head"><h2>${lot?"Edit Watch Lot":"Add Watch Lot"}</h2><button class="close-btn" data-close type="button">×</button></div>
@@ -4716,12 +4719,13 @@ async function openLotModal(auction,lot){
         ${field("Maximum bid","maxBid",l.maxBid,false,"number","0.01")}
         ${textareaField("Advertised condition","conditionAdvertised",l.conditionAdvertised)}
         ${textareaField("Notes","notes",l.notes)}
+<textarea name="researchNotes" hidden>${esc(l.researchNotes||"")}</textarea>
       </div></div></div>
 <div class="modal-actions">${lot?`<button class="btn danger" id="deleteLot" type="button">Delete</button>`:""}${lot&&l.listingUrl?`<button class="btn secondary" id="openLotWebsite" type="button">Open Listing</button>`:""}<button class="btn secondary" id="lotResearch" type="button">Research</button><button class="btn ghost" data-close type="button">Cancel</button><button class="btn" type="submit">Save Lot</button></div>
     </form>
   `);
 const lotResearch=$("#lotResearch");
-if(lotResearch)lotResearch.onclick=()=>openResearchBrowser($("#lotForm").elements.listingUrl.value);
+if(lotResearch)lotResearch.onclick=()=>openResearchBrowser($("#lotForm").elements.listingUrl.value,$("#lotForm").elements.researchNotes);
   const openLotWebsite=$("#openLotWebsite");
   if(openLotWebsite)openLotWebsite.onclick=()=>openExternalUrl(l.listingUrl,"lot listing");
   $("#lotForm").onsubmit=async e=>{
@@ -6070,7 +6074,7 @@ function normalizeResearchUrl(value){
   }
 }
 
-async function openResearchBrowser(seedUrl=""){
+async function openResearchBrowser(seedUrl="",notesTarget=null){
   let root=$("#researchBrowserRoot");
 
   if(!root){
@@ -6078,6 +6082,7 @@ async function openResearchBrowser(seedUrl=""){
     root.id="researchBrowserRoot";
     root.className="research-browser-root";
     root.hidden=true;
+    root._notesTarget=null;
 
     root.innerHTML=`
       <div class="research-browser-backdrop">
@@ -6085,7 +6090,7 @@ async function openResearchBrowser(seedUrl=""){
           <div class="research-browser-head">
             <div>
               <div class="eyebrow">AUCTION RESEARCH</div>
-              <h2>Research Browser</h2>
+              <h2>Research Workspace</h2>
             </div>
 
             <button class="close-btn" id="researchBrowserClose" type="button">×</button>
@@ -6099,20 +6104,29 @@ async function openResearchBrowser(seedUrl=""){
               placeholder="Enter a website, URL, or search"
             >
 
-            <button class="btn" id="researchBrowserGo" type="button">Go</button>
             <button class="btn secondary" id="researchBrowserNewTab" type="button">Open in New Tab</button>
           </div>
 
           <div class="research-browser-help">
-            Some websites block embedded viewing. If a page does not display here, use Open in New Tab. Your Auction or Lot form will remain open.
+            Open the research site in a new tab, copy anything useful, then return here and paste it into the staging notes below.
           </div>
 
-          <div class="research-browser-frame-wrap">
-            <iframe
-              id="researchBrowserFrame"
-              title="Auction research browser"
-              referrerpolicy="no-referrer-when-downgrade"
-            ></iframe>
+          <div class="research-workspace-notes">
+            <label for="researchWorkspaceNotes">Research Notes / Staging Area</label>
+            <textarea
+              class="textarea"
+              id="researchWorkspaceNotes"
+              placeholder="Paste auction descriptions, condition details, dimensions, pricing notes, seller information, links, or anything else you may want while filling out the Auction or Watch Lot."
+            ></textarea>
+
+            <div class="research-workspace-actions">
+              <button class="btn ghost" id="researchWorkspaceClear" type="button">Clear</button>
+              <button class="btn" id="researchWorkspaceSave" type="button">Save Notes</button>
+            </div>
+
+            <small id="researchWorkspaceStatus">
+              Notes stay in this workspace while it remains open during this form session.
+            </small>
           </div>
         </section>
       </div>
@@ -6121,9 +6135,10 @@ async function openResearchBrowser(seedUrl=""){
     document.body.appendChild(root);
 
     const address=$("#researchBrowserAddress",root);
-    const frame=$("#researchBrowserFrame",root);
+    const notes=$("#researchWorkspaceNotes",root);
+    const status=$("#researchWorkspaceStatus",root);
 
-    const navigateResearch=async()=>{
+    $("#researchBrowserNewTab",root).onclick=async()=>{
       const url=normalizeResearchUrl(address.value);
 
       if(!url){
@@ -6132,33 +6147,36 @@ async function openResearchBrowser(seedUrl=""){
       }
 
       address.value=url;
-      frame.src=url;
 
       await DB.put("settings",{
         key:"researchBrowserUrl",
         value:url,
         updatedAt:new Date().toISOString()
       });
-    };
 
-    $("#researchBrowserGo",root).onclick=navigateResearch;
+      window.open(url,"_blank","noopener");
+    };
 
     address.onkeydown=e=>{
       if(e.key==="Enter"){
         e.preventDefault();
-        navigateResearch();
+        $("#researchBrowserNewTab",root).click();
       }
     };
 
-    $("#researchBrowserNewTab",root).onclick=()=>{
-      const url=normalizeResearchUrl(address.value);
-
-      if(!url){
-        alert("Enter a valid website, URL, or search.");
+    $("#researchWorkspaceSave",root).onclick=()=>{
+      if(!root._notesTarget){
+        status.textContent="No Auction or Watch Lot form is connected to these notes.";
         return;
       }
 
-      window.open(url,"_blank","noopener");
+      root._notesTarget.value=notes.value;
+      status.textContent="Research notes attached. Save the Auction or Watch Lot to keep them permanently.";
+    };
+
+    $("#researchWorkspaceClear",root).onclick=()=>{
+      notes.value="";
+      status.textContent="Staging notes cleared. Use Save Notes if you also want the attached record cleared.";
     };
 
     $("#researchBrowserClose",root).onclick=()=>{
@@ -6173,7 +6191,8 @@ async function openResearchBrowser(seedUrl=""){
   }
 
   const address=$("#researchBrowserAddress",root);
-  const frame=$("#researchBrowserFrame",root);
+  const notes=$("#researchWorkspaceNotes",root);
+  const status=$("#researchWorkspaceStatus",root);
 
   if(seedUrl){
     const seeded=normalizeResearchUrl(seedUrl);
@@ -6181,25 +6200,29 @@ async function openResearchBrowser(seedUrl=""){
     if(seeded){
       address.value=seeded;
 
-      if(!frame.src){
-        frame.src=seeded;
-      }
-
       await DB.put("settings",{
         key:"researchBrowserUrl",
         value:seeded,
         updatedAt:new Date().toISOString()
       });
     }
-  }else if(!frame.src){
+  }else if(!address.value){
     const saved=await DB.getOne("settings","researchBrowserUrl");
     const savedUrl=normalizeResearchUrl(saved?.value);
 
     if(savedUrl){
       address.value=savedUrl;
-      frame.src=savedUrl;
     }
   }
+
+  if(notesTarget!==root._notesTarget){
+    root._notesTarget=notesTarget;
+    notes.value=notesTarget?String(notesTarget.value||""):"";
+  }
+
+  status.textContent=notesTarget
+    ?"Research notes are connected to this form. Use Save Notes before saving the Auction or Watch Lot."
+    :"No Auction or Watch Lot form is connected to these notes.";
 
   root.hidden=false;
   address.focus();

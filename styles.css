@@ -244,17 +244,38 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   border-bottom:1px solid var(--line);
 }
 
-.research-browser-frame-wrap{
+.research-workspace-notes{
   min-height:0;
-  background:#fff;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto auto;
+  gap:10px;
+  padding:14px;
+  overflow:hidden;
 }
 
-.research-browser-frame-wrap iframe{
-  display:block;
+.research-workspace-notes label{
+  color:var(--text);
+  font-size:13px;
+  font-weight:850;
+}
+
+.research-workspace-notes textarea{
   width:100%;
   height:100%;
-  border:0;
-  background:#fff;
+  min-height:260px;
+  resize:none;
+}
+
+.research-workspace-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.research-workspace-notes small{
+  color:var(--muted);
+  line-height:1.4;
 }
 
 @media(max-width:700px){
