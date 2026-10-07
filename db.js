@@ -2,7 +2,7 @@
   "use strict";
 
   const DB_NAME = "moonskai-business-organizer";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
   let dbPromise = null;
 
   function createStore(db, name, keyPath, indexes) {
@@ -26,6 +26,7 @@ const DB_VERSION = 2;
         createStore(db,"auctions","id",[["date","date"],["status","status"]]);
         createStore(db,"auctionLots","id",[["auctionId","auctionId"],["inventoryItemId","inventoryItemId"]]);
         createStore(db,"expenses","id",[["date","date"],["category","category"],["itemId","itemId"],["eventId","eventId"],["auctionId","auctionId"]]);
+        createStore(db,"supplyAllocations","id",[["expenseId","expenseId"],["expenseLineId","expenseLineId"],["itemId","itemId"],["createdAt","createdAt"]]);
         createStore(db,"mileage","id",[["date","date"],["eventId","eventId"],["auctionId","auctionId"]]);
         createStore(db,"sales","id",[["itemId","itemId"],["eventId","eventId"],["date","date"]]);
         createStore(db,"transactions","id",[["date","date"],["status","status"],["paymentMethod","paymentMethod"],["source","source"],["externalTransactionId","externalTransactionId"],["eventId","eventId"]]);
