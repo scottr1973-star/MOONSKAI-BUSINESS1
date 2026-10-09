@@ -2725,10 +2725,13 @@ if(initialItemId){
               <label>SKU / Identifier</label>
               <input class="input" id="saleLookup" autocomplete="off" placeholder="ML-000001">
             </div>
-            <div class="field">
-              <label>&nbsp;</label>
-              <button class="btn" id="addSaleItem" type="button">Add Item</button>
-            </div>
+<div class="field">
+  <label>&nbsp;</label>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn secondary" id="scanSaleItem" type="button">▦ Scan</button>
+    <button class="btn" id="addSaleItem" type="button">Add Item</button>
+  </div>
+</div>
           </div>
 
           <div id="saleLookupMessage"></div>
@@ -2907,6 +2910,7 @@ updateCashCalculator();
     renderCart();
   };
 
+$("#scanSaleItem").onclick=()=>openInventoryCodeScanner();
   $("#addSaleItem").onclick=addLookupItem;
 
   lookup.onkeydown=e=>{
